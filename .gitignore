@@ -1,0 +1,10 @@
+# 敏感信息：含 API 密钥，禁止提交
+opencode.json
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 临时/日志
+*.log
