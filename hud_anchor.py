@@ -51,11 +51,19 @@ def find_gen_anchors(frame, template, scales=SCALES, min_score=0.70):
     best_per_cluster.sort(key=lambda m: -m["scale"])
     return best_per_cluster
 
-def detect_anchor(frame, template, **kwargs):
+def detect_anchor(frame, template, prior=None, pos_tol=15, **kwargs):
     cands = find_gen_anchors(frame, template, **kwargs)
     if not cands:
         return None
-    m = cands[0]
+    if prior is not None:
+        px, py = prior
+        near = [m for m in cands
+                if abs(m["box"][0] - px) <= pos_tol and abs(m["box"][1] - py) <= pos_tol]
+        if not near:
+            return None
+        m = max(near, key=lambda m: m["score"])
+    else:
+        m = max(cands, key=lambda m: m["score"])
     x0, y0, x1, y1 = m["box"]
     return {
         "x": x0,

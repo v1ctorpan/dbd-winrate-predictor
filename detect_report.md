@@ -1,0 +1,12 @@
+| frame | scale | p1 | p2 | p3 | p4 | hooks | gens | 机器标注 | 人工备注(请填写) |
+|---|---|---|---|---|---|---|---|---|---|
+| frame_00_30.0.jpg | 1.50 | - | - | - | - | - | 锚点异常@(921,353) |  |
+| frame_02_10.0.jpg | 1.30 | unknown | healthy | healthy | unknown | 0/0/0/0 | 4 | p1未知; p4未知 |  |
+| frame_02_20.0.jpg | 1.30 | unknown | healthy | healthy | unknown | 0/0/1/1 | 4 | p1未知; p4未知 |  |
+| frame_02_50.0.jpg | 1.30 | injured | unknown | healthy | unknown | 0/2/0/0 | 4 | p2未知; p4未知 |  |
+| frame_04_40.0.jpg | 1.30 | healthy | injured | healthy | unknown | 0/0/0/0 | 3 | p4未知 |  |
+| frame_05_10.0.jpg | 1.50 | - | - | - | - | - | 锚点异常@(640,24) |  |
+| frame_05_50.0.jpg | 1.30 | healthy | hooked | injured | unknown | 0/0/1/0 | None | p4未知; gens未识别 |  |
+| frame_13_30.0.jpg | 1.30 | injured | injured | healthy | hooked | 1/0/0/0 | 3 | 正常 |  |
+| frame_14_20.0.jpg | 1.30 | injured | injured | injured | injured | 0/0/0/0 | None | gens未识别 |  |
+| frame_15_40.0.jpg | 1.90 | - | - | - | - | - | 锚点异常@(1390,315) |  |

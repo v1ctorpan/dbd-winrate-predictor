@@ -1,0 +1,21 @@
+============================================================
+DBD HUD 识别检测报告
+测试集: BV1Uu8z6eEVM (1080p, 10s 间隔抽帧)
+随机抽样 seed=42: 10 帧
+============================================================
+
+frame_00_30.0.jpg: [异常] 锚点位置(921,353 scale 1.50),非对局画面或锚点误匹配
+frame_02_10.0.jpg [scale 1.30] p1=unknown(0.20) p2=healthy(0.64) p3=healthy(0.54) p4=unknown(0.21) | h1=0 h2=0 h3=0 h4=0 | gens=4 [注意] p1状态可疑; p4状态可疑
+frame_02_20.0.jpg [scale 1.30] p1=unknown(0.21) p2=healthy(0.52) p3=healthy(0.47) p4=unknown(0.18) | h1=0 h2=0 h3=1 h4=1 | gens=4 [注意] p1状态可疑; p4状态可疑
+frame_02_50.0.jpg [scale 1.30] p1=injured(0.47) p2=unknown(0.29) p3=healthy(0.47) p4=unknown(0.17) | h1=0 h2=2 h3=0 h4=0 | gens=4 [注意] p2状态可疑; p4状态可疑
+frame_04_40.0.jpg [scale 1.30] p1=healthy(0.54) p2=injured(0.50) p3=healthy(0.42) p4=unknown(0.10) | h1=0 h2=0 h3=0 h4=0 | gens=3 [注意] p4状态可疑
+frame_05_10.0.jpg: [异常] 锚点位置(640,24 scale 1.50),非对局画面或锚点误匹配
+frame_05_50.0.jpg [scale 1.30] p1=healthy(0.54) p2=hooked(0.64) p3=injured(0.47) p4=unknown(0.20) | h1=0 h2=0 h3=1 h4=0 | gens=None [注意] p4状态可疑; gens未识别
+frame_13_30.0.jpg [scale 1.30] p1=injured(0.43) p2=injured(0.68) p3=healthy(0.61) p4=hooked(0.90) | h1=1 h2=0 h3=0 h4=0 | gens=3
+frame_14_20.0.jpg [scale 1.30] p1=injured(0.41) p2=injured(0.64) p3=injured(0.47) p4=injured(0.45) | h1=0 h2=0 h3=0 h4=0 | gens=None [注意] gens未识别
+frame_15_40.0.jpg: [异常] 锚点位置(1390,315 scale 1.90),非对局画面或锚点误匹配
+
+============================================================
+说明: unknown=头像状态低于置信阈值; gens=None=检测到图标但数字未达阈值
+需人工复核: 锚点异常帧是否为非对局画面; gens=None 是否为真实状态
+============================================================

@@ -1,49 +1,147 @@
+import json
 import os
+import tkinter as tk
 
 import cv2
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
-SRC_DIR = r"D:\files\code\dbd_pred\picture\test1"
-OUT_DIR = r"D:\files\code\dbd_pred\picture\test1_annotated"
-FRAMES = ["frame_0000.jpg", "frame_0006.jpg", "frame_0010.jpg"]
+import hud_anchor
+import hud_regions
 
-W, H = 1280, 720
+BASE = os.path.dirname(os.path.abspath(__file__))
+CFG = os.path.join(BASE, "config", "hud_regions.json")
+ANCHOR_TPL = os.path.join(BASE, "picture", "gen.jpg")
+FRAME_DIR = os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
+FRAME_NAME = "frame_02_10.0.jpg"
+OUT = os.path.join(BASE, "config", "hook_regions.json")
 
-REGIONS = [
-    ("survivor_p1",       0.012, 0.480, 0.078, 0.600, (0, 255, 0)),
-    ("survivor_p2",       0.012, 0.604, 0.078, 0.724, (0, 255, 0)),
-    ("survivor_p3",       0.012, 0.728, 0.078, 0.848, (0, 255, 0)),
-    ("survivor_p4",       0.012, 0.852, 0.078, 0.972, (0, 255, 0)),
-    ("hook_pips",         0.082, 0.480, 0.130, 0.972, (255, 200, 0)),
-    ("gens_row",          0.320, 0.120, 0.660, 0.185, (0, 200, 255)),
-    ("gates_icons",       0.665, 0.120, 0.780, 0.185, (255, 0, 255)),
-    ("timer",             0.240, 0.120, 0.318, 0.185, (255, 255, 0)),
-]
+REGIONS = ["hook_p1", "hook_p2", "hook_p3", "hook_p4"]
+BGR_COLORS = [(0, 0, 255), (0, 165, 255), (0, 128, 0), (255, 0, 0)]
+
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        root.title("标注 hook 区域框 (BV1Uu8z6eEVM)")
+        root.geometry("1100x700")
+
+        self.cfg = hud_regions.load_regions(CFG)
+        self.tpl = cv2.imread(ANCHOR_TPL)
+        self.frame = cv2.imread(os.path.join(FRAME_DIR, FRAME_NAME))
+        self.anchor = hud_anchor.detect_anchor(self.frame, self.tpl, prior=(121, 847))
+        if self.anchor is None:
+            raise SystemExit("锚点检测失败")
+        self.scale = self.anchor["scale"]
+
+        self.display = self.frame.copy()
+        self.overlay = self.display.copy()
+        self.canvas = tk.Canvas(root, bg="gray")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        tip = tk.Label(
+            root,
+            text="鼠标拖拽移动当前玩家框 | 数字1-4切换玩家 | s保存 | r恢复初始 | q退出",
+        )
+        tip.pack()
+        self.status = tk.Label(root, text="", anchor="w")
+        self.status.pack(fill=tk.X)
+
+        self.boxes = {}
+        self.cursor = {}
+        for name in REGIONS:
+            b = self.cfg["regions"][name]
+            self.boxes[name] = hud_regions.rel_to_abs(b, self.anchor)
+            self.cursor[name] = None
+
+        self.current = "hook_p1"
+        self.canvas.bind("<Button-1>", self.on_press)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_release)
+        root.bind("<Key>", self.on_key)
+        root.after(50, self.redraw)
+
+    def refresh_overlay(self):
+        self.overlay = self.display.copy()
+        for i, name in enumerate(REGIONS):
+            b = self.boxes[name]
+            color = BGR_COLORS[i]
+            sel = 3 if name == self.current else 1
+            self.overlay = cv2.rectangle(self.overlay, (b["x0"], b["y0"]), (b["x1"], b["y1"]),
+                                         color, sel)
+            self.overlay = cv2.putText(
+                self.overlay, name, (b["x0"], b["y0"] - 6),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        self.overlay = cv2.circle(self.overlay, (self.anchor["x"], self.anchor["y"]), 6, (0, 0, 255), 2)
+
+    def redraw(self):
+        self.refresh_overlay()
+        ok, buf = cv2.imencode(".png", self.overlay)
+        if not ok:
+            return
+        img = tk.PhotoImage(data=buf.tobytes())
+        self.canvas.img = img
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, image=img, anchor="nw")
+        self.status.config(
+            text=f"{FRAME_NAME} scale={self.scale:.2f} anchor=({self.anchor['x']},{self.anchor['y']}) | "
+                 f"当前: {self.current} {self.boxes[self.current]}")
+        self.root.after(30, self.redraw)
+
+    def on_press(self, event):
+        for name in REGIONS:
+            b = self.boxes[name]
+            if b["x0"] - 8 <= event.x <= b["x1"] + 8 and b["y0"] - 8 <= event.y <= b["y1"] + 8:
+                self.current = name
+                self.cursor[name] = (event.x - b["x0"], event.y - b["y0"])
+                return
+
+    def on_drag(self, event):
+        for name in REGIONS:
+            c = self.cursor[name]
+            if c is not None:
+                b = self.boxes[name]
+                w = b["x1"] - b["x0"]
+                h = b["y1"] - b["y0"]
+                b["x0"] = event.x - c[0]
+                b["y0"] = event.y - c[1]
+                b["x1"] = b["x0"] + w
+                b["y1"] = b["y0"] + h
+                return
+
+    def on_release(self, event):
+        self.cursor = {k: None for k in self.cursor}
+
+    def on_key(self, event):
+        if event.char in "1234":
+            self.current = REGIONS[int(event.char) - 1]
+        elif event.char == "r":
+            for name in REGIONS:
+                self.boxes[name] = hud_regions.rel_to_abs(self.cfg["regions"][name], self.anchor)
+        elif event.char == "s":
+            self.save()
+        elif event.char == "q":
+            self.root.destroy()
+
+    def save(self):
+        data = {
+            "video": "BV1Uu8z6eEVM",
+            "anchor_frame": FRAME_NAME,
+            "anchor": self.anchor,
+            "regions": {
+                name: hud_regions.abs_to_rel(
+                    (b["x0"], b["y0"], b["x1"], b["y1"]), self.anchor)
+                for name, b in self.boxes.items()
+            },
+        }
+        with open(OUT, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        self.status.config(text=f"已保存到 {OUT}")
+
 
 def main():
-    os.makedirs(OUT_DIR, exist_ok=True)
-    try:
-        font = ImageFont.truetype("C:/Windows/Fonts/msyh.ttc", 20)
-    except Exception:
-        font = ImageFont.load_default()
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
 
-    for fname in FRAMES:
-        img = cv2.imread(os.path.join(SRC_DIR, fname))
-        if img is None:
-            print(f"skip {fname}")
-            continue
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        pil = Image.fromarray(rgb)
-        draw = ImageDraw.Draw(pil)
-        for name, x0, y0, x1, y1, color in REGIONS:
-            x0p, y0p = int(x0 * W), int(y0 * H)
-            x1p, y1p = int(x1 * W), int(y1 * H)
-            draw.rectangle([x0p, y0p, x1p, y1p], outline=color, width=3)
-            draw.text((x0p + 3, y0p - 22), name, fill=color, font=font)
-        out_path = os.path.join(OUT_DIR, fname)
-        pil.save(out_path)
-        print(f"saved {out_path}")
 
 if __name__ == "__main__":
     main()
