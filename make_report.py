@@ -15,7 +15,32 @@ CFG = os.path.join(BASE, "config", "hud_regions.json")
 HOOK_CFG = os.path.join(BASE, "config", "hook_regions.json")
 ANCHOR_TPL = os.path.join(BASE, "picture", "gen.jpg")
 CROPS = os.path.join(BASE, "picture", "crops")
+ASSETS = os.path.join(BASE, "asset")
 REPORT_DIR = os.path.join(BASE, "report")
+
+OFFICIAL_ICONS = {
+    "hooked": "icon_hook.webp",
+    "dying": "icon_dying.webp",
+    "escaped": "icon_exitGate.webp",
+    "dead": "icon_scarified.png",
+}
+
+
+def load_official_icons():
+    tpl = {}
+    for state, fname in OFFICIAL_ICONS.items():
+        img = cv2.imread(os.path.join(ASSETS, fname), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            continue
+        if img.ndim == 3 and img.shape[2] == 4:
+            a = img[:, :, 3]
+            ys, xs = np.nonzero(a > 0)
+            bgr = img[:, :, :3].copy()
+            bgr[a == 0] = 0
+            tpl[state] = bgr[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        else:
+            tpl[state] = img
+    return tpl
 
 REF_CROPS = {
     "hooked":  [("frame_0003", "survivor_p3")],
@@ -59,7 +84,7 @@ def build_refs(scale):
     return refs
 
 
-def classify(crop, slot, refs):
+def classify(crop, slot, refs, icon_tpl=None):
     h, w = crop.shape[:2]
 
     def fit(img):
@@ -75,6 +100,13 @@ def classify(crop, slot, refs):
                 best_score, best_icon = s, state
     if best_score >= 0.55:
         return best_icon
+    if icon_tpl:
+        for state, tpl in icon_tpl.items():
+            s = state_recognizer.multi_scale_match(crop, tpl)
+            if s > best_score:
+                best_score, best_icon = s, state
+        if best_score >= 0.70:
+            return best_icon
     healthy_refs = refs.get("healthy", [])
     if 0 <= slot < len(healthy_refs):
         s = state_recognizer.ncc(crop, fit(healthy_refs[slot]))
@@ -132,12 +164,51 @@ def apply_hook_cfg(resolved, anchor, video_name=None):
             resolved[name] = hud_regions.rel_to_abs(rel, anchor)
 
 
+def build_opening_refs(frame, resolved):
+    healthy = []
+    for i in range(1, 5):
+        b = resolved[f"survivor_p{i}"]
+        healthy.append(frame[b["y0"]:b["y1"], b["x0"]:b["x1"]])
+    return {"healthy": healthy}
+
+
+def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8):
+    anchor0 = None
+    for k in range(min(max_probe, len(names))):
+        frame = cv2.imread(os.path.join(frame_dir, names[k]))
+        if frame is None:
+            continue
+        anchor = get_anchor(frame, tpl)
+        if anchor is None:
+            continue
+        resolved = hud_regions.resolve_regions(cfg, anchor)
+        crops = [frame[r["y0"]:r["y1"], r["x0"]:r["x1"]]
+                 for r in [resolved[f"survivor_p{i}"] for i in range(1, 5)]]
+        total = 0
+        nxt = k + 1
+        if nxt >= len(names):
+            return frame, anchor, resolved
+        frame_next = cv2.imread(os.path.join(frame_dir, names[nxt]))
+        if frame_next is None:
+            return frame, anchor, resolved
+        anchor_next = get_anchor(frame_next, tpl) or anchor
+        resolved_next = hud_regions.resolve_regions(cfg, anchor_next)
+        for i in range(4):
+            b = resolved_next[f"survivor_p{i + 1}"]
+            cur = frame_next[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+            h, w = cur.shape[:2]
+            total += state_recognizer.ncc(crops[i], cv2.resize(cur, (w, h)))
+        if total / 4.0 >= 0.7:
+            return frame, anchor, resolved
+        anchor0 = anchor
+    if anchor0 is None:
+        return None, None, None
+    frame = cv2.imread(os.path.join(frame_dir, names[0]))
+    return frame, anchor0, hud_regions.resolve_regions(cfg, anchor0)
+
+
 def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
-    frame_names = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
-    if sample is not None and sample < len(frame_names):
-        import random
-        rng = random.Random(seed)
-        frame_names = sorted(rng.sample(frame_names, sample))
+    all_names = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
     cfg = hud_regions.load_regions(CFG)
     tpl = cv2.imread(ANCHOR_TPL)
     digit_refs = gens_counter.build_digit_refs()
@@ -147,16 +218,22 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     ann_dir = os.path.join(out_dir, "annotated")
     os.makedirs(ann_dir, exist_ok=True)
 
-    # 用第一帧确定锚点 + 槽位
-    frame0 = cv2.imread(os.path.join(frame_dir, frame_names[0]))
-    anchor = get_anchor(frame0, tpl)
+    # 自动挑选开局已渲染 HUD 的帧，以其各角色形象作为该局 healthy 参考
+    opening, anchor, resolved = pick_opening_frame(frame_dir, all_names, get_anchor, tpl, cfg)
     if anchor is None:
-        print(f"[{name}] 第一帧无锚点，跳过")
+        print(f"[{name}] 开局帧无锚点，跳过")
         return
     scale = anchor["scale"]
-    resolved = hud_regions.resolve_regions(cfg, anchor)
     apply_hook_cfg(resolved, anchor, name)
     refs = build_refs(scale)
+    refs["healthy"] = build_opening_refs(opening, resolved)["healthy"]
+    icon_tpl = load_official_icons()
+
+    frame_names = all_names
+    if sample is not None and sample < len(frame_names):
+        import random
+        rng = random.Random(seed)
+        frame_names = sorted(rng.sample(frame_names, sample))
     slot_files = [os.path.join(frame_dir, f) for f in frame_names]
     slots = calibrator.calibrate_hook_slots(slot_files, resolved)
     print(f"[{name}] anchor=({anchor['x']},{anchor['y']}) scale={scale:.2f} slots={slots}")
@@ -176,7 +253,7 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
         for i in range(1, 5):
             b = resolved[f"survivor_p{i}"]
             crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
-            states.append(classify(crop, i - 1, refs))
+            states.append(classify(crop, i - 1, refs, icon_tpl))
         hooks = hook_counter.count_all(frame, resolved, slots)
         gens = gens_counter.count_gens(frame, resolved, digit_refs, gen=gen, anchor=anchor)
         flags = []

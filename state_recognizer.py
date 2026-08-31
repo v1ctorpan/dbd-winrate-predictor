@@ -42,7 +42,33 @@ def ncc(a, b):
         return 0.0
     return float((a @ b) / denom)
 
-def redness(crop):
+ICON_SCALES = 10
+
+
+def multi_scale_match(crop, icon):
+    g_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    g_crop -= g_crop.mean()
+    ih, iw = icon.shape[:2]
+    best = -1.0
+    for scale in np.linspace(0.3, 1.2, ICON_SCALES):
+        w = int(iw * scale)
+        h = int(ih * scale)
+        if w < 6 or h < 6 or w > g_crop.shape[1] or h > g_crop.shape[0]:
+            continue
+        t = cv2.resize(icon, (w, h), interpolation=cv2.INTER_AREA)
+        t = cv2.cvtColor(t, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        t -= t.mean()
+        res = cv2.matchTemplate(g_crop, t, cv2.TM_CCOEFF_NORMED)
+        _, mx, _, _ = cv2.minMaxLoc(res)
+        if mx > best:
+            best = mx
+    return best
+
+
+def redness(crop, frac=0.5):
+    h, w = crop.shape[:2]
+    my, mx = int(h * (1 - frac) / 2), int(w * (1 - frac) / 2)
+    crop = crop[my:h - my, mx:w - mx]
     b = crop[:, :, 0].astype(np.float32)
     g = crop[:, :, 1].astype(np.float32)
     r = crop[:, :, 2].astype(np.float32)
@@ -52,7 +78,8 @@ def redness(crop):
         "sat": float(hsv[:, :, 1].mean()),
     }
 
-def classify(crop, slot, refs, icon_thr=0.55, face_thr=0.35, inj_rg_delta=12.0, inj_sat_delta=15.0):
+def classify(crop, slot, refs, icon_thr=0.55, face_thr=0.35, inj_rg_delta=12.0, inj_sat_delta=15.0,
+             icon_tpl=None):
     best_icon, best_score = None, -1.0
     for state in ICON_STATES:
         for ref in refs.get(state, []):
@@ -61,6 +88,15 @@ def classify(crop, slot, refs, icon_thr=0.55, face_thr=0.35, inj_rg_delta=12.0, 
                 best_score, best_icon = s, state
     if best_score >= icon_thr:
         return best_icon, best_score
+    if icon_tpl:
+        for state, tpl in icon_tpl.items():
+            if not tpl:
+                continue
+            s = multi_scale_match(crop, tpl)
+            if s > best_score:
+                best_score, best_icon = s, state
+        if best_score >= icon_thr + 0.15:
+            return best_icon, best_score
 
     healthy_refs = refs.get("healthy", [])
     if 0 <= slot < len(healthy_refs):
