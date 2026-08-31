@@ -3,9 +3,14 @@ frame_00_30.0.jpg,1.30,healthy,healthy,healthy,healthy,0/0/0/0,5,正常
 frame_02_10.0.jpg,1.30,hooked,healthy,healthy,healthy,1/0/0/0,4,正常
 frame_02_20.0.jpg,1.30,hooked,healthy,healthy,healthy,1/0/0/0,4,正常
 frame_02_50.0.jpg,1.30,injured,dying,healthy,healthy,1/0/0/0,4,正常
+frame_04_20.0.jpg,1.30,healthy,injured,healthy,injured,1/1/0/1,None,gens未识别
 frame_04_40.0.jpg,1.30,healthy,injured,healthy,healthy,1/1/0/1,3,正常
+frame_05_00.0.jpg,1.30,healthy,dying,healthy,healthy,1/1/0/1,3,正常
 frame_05_10.0.jpg,1.30,healthy,injured,healthy,healthy,1/1/0/1,3,正常
 frame_05_50.0.jpg,1.30,healthy,hooked,injured,healthy,1/2/0/1,None,gens未识别
+frame_09_10.0.jpg,1.30,healthy,dead,healthy,healthy,1/2/1/1,None,gens未识别
+frame_09_40.0.jpg,1.30,healthy,dead,dying,dying,1/2/1/1,0,正常
 frame_13_30.0.jpg,1.30,injured,healthy,healthy,hooked,0/0/0/2,3,正常
+frame_14_00.0.jpg,1.30,injured,healthy,injured,injured,0/0/0/2,2,正常
 frame_14_20.0.jpg,1.30,injured,injured,injured,unknown,0/0/0/2,None,p4未知; gens未识别
-frame_15_40.0.jpg,1.30,healthy,injured,injured,injured,0/0/0/2,None,gens未识别
+frame_15_40.0.jpg,1.30,healthy,injured,injured,healthy,0/0/0/2,None,gens未识别

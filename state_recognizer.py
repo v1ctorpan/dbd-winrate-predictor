@@ -45,6 +45,116 @@ def ncc(a, b):
 ICON_SCALES = 10
 
 
+def red_diag_lines(crop, healthy_ref, diff_thr=40, minlen=5, angle_tol=25, diag_thr=6):
+    """检测受伤红斜线：与健康参考做 R 通道差分，统计 -45 度斜线数量。"""
+    c = crop.astype(np.float32)
+    b = healthy_ref.astype(np.float32)
+    h, w = crop.shape[:2]
+    if b.shape[:2] != (h, w):
+        b = cv2.resize(b, (w, h), interpolation=cv2.INTER_AREA)
+    diff = c[:, :, 2] - b[:, :, 2]
+    m = (diff > diff_thr).astype(np.uint8) * 255
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
+    lines = cv2.HoughLinesP(m, 1, np.pi / 180, threshold=6,
+                            minLineLength=minlen, maxLineGap=2)
+    diag = 0
+    total = 0
+    if lines is not None:
+        total = len(lines)
+        for x1, y1, x2, y2 in lines[:, 0]:
+            a = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+            if abs(a + 45) < angle_tol or abs(a - 135) < angle_tol:
+                diag += 1
+    return int(m.sum() / 255), diag, total
+
+
+def red_diag_long(crop, healthy_ref, diff_thr=40, minlen=10, angle_tol=20):
+    """统计长度>=minlen 的完整 -45 度斜线（跨越整幅头像的受伤条纹）。"""
+    c = crop.astype(np.float32)
+    b = healthy_ref.astype(np.float32)
+    h, w = crop.shape[:2]
+    if b.shape[:2] != (h, w):
+        b = cv2.resize(b, (w, h), interpolation=cv2.INTER_AREA)
+    diff = c[:, :, 2] - b[:, :, 2]
+    m = (diff > diff_thr).astype(np.uint8) * 255
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
+    lines = cv2.HoughLinesP(m, 1, np.pi / 180, threshold=6,
+                            minLineLength=minlen, maxLineGap=3)
+    long_d = 0
+    if lines is not None:
+        for x1, y1, x2, y2 in lines[:, 0]:
+            a = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+            if abs(a + 45) < angle_tol or abs(a - 135) < angle_tol:
+                if int(np.hypot(x2 - x1, y2 - y1)) >= minlen:
+                    long_d += 1
+    return long_d
+
+
+def _hist_match(img, ref):
+    """逐通道直方图匹配：消除整体亮度/对比度差异（雾、光照变化）。"""
+    out = np.zeros_like(img)
+    for ch in range(3):
+        src = img[:, :, ch].ravel()
+        dst = ref[:, :, ch].ravel()
+        s_hist, _ = np.histogram(src, 256, [0, 256])
+        d_hist, _ = np.histogram(dst, 256, [0, 256])
+        s_cdf = s_hist.cumsum() / s_hist.sum()
+        d_cdf = d_hist.cumsum() / d_hist.sum()
+        map_ = np.interp(s_cdf, d_cdf, np.arange(256))
+        out[:, :, ch] = map_[src].reshape(img[:, :, ch].shape)
+    return out.astype(np.uint8)
+
+
+def red_diag_clusters(crop, healthy_ref, diff_thr=40, minlen=10, angle_tol=15,
+                      rho_tol=8, center=(0.7, 0.8), yratio=0.6):
+    """检测受伤红斜线：直方图归一化后中心区域 -45 度斜线，要求延伸到头像下 60%。
+    受伤条纹是横跨头像下部（y >= h*yratio）的斜线；左上角装饰差异被 yratio 排除，
+    亮度/对比度变化被直方图匹配归一化消除。返回簇数。"""
+    c = crop.astype(np.float32)
+    b = healthy_ref.astype(np.float32)
+    h, w = c.shape[:2]
+    if b.shape[:2] != (h, w):
+        b = cv2.resize(b, (w, h), interpolation=cv2.INTER_AREA)
+    if (c[:, :, 2] - b[:, :, 2]).mean() > 0:
+        c = _hist_match(crop, b.astype(np.uint8)).astype(np.float32)
+    diff = c[:, :, 2] - b[:, :, 2]
+    m = (diff > diff_thr).astype(np.uint8) * 255
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
+    fx, fy = center
+    x0 = int(w * (1 - fx) / 2)
+    x1 = int(w * (1 + fx) / 2)
+    y0 = int(h * (1 - fy) / 2)
+    y1 = int(h * (1 + fy) / 2)
+    sub = np.zeros_like(m)
+    sub[y0:y1, x0:x1] = m[y0:y1, x0:x1]
+    lines = cv2.HoughLinesP(sub, 1, np.pi / 180, threshold=6,
+                            minLineLength=minlen, maxLineGap=3)
+    if lines is None:
+        return 0
+    bs = []
+    theta = np.radians(135)
+    for x1, y1, x2, y2 in lines[:, 0]:
+        a = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+        if not (abs(a + 45) < angle_tol or abs(a - 135) < angle_tol):
+            continue
+        if int(np.hypot(x2 - x1, y2 - y1)) < minlen:
+            continue
+        if max(y1, y2) < h * yratio:
+            continue
+        rho = x1 * np.cos(theta) + y1 * np.sin(theta)
+        bs.append(rho)
+    if not bs:
+        return 0
+    bs = np.sort(bs)
+    clusters = [[bs[0]]]
+    for r in bs[1:]:
+        if r - clusters[-1][-1] <= rho_tol:
+            clusters[-1].append(r)
+        else:
+            clusters.append([r])
+    return len(clusters)
+
+
 def multi_scale_match(crop, icon):
     g_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY).astype(np.float32)
     g_crop -= g_crop.mean()

@@ -112,9 +112,7 @@ def classify(crop, slot, refs, icon_tpl=None):
         s = state_recognizer.ncc(crop, fit(healthy_refs[slot]))
         if s < 0.35:
             return "unknown"
-        cur = state_recognizer.redness(crop)
-        base = state_recognizer.redness(healthy_refs[slot])
-        if cur["rg"] > base["rg"] + 12.0 and cur["sat"] > base["sat"] + 15.0:
+        if state_recognizer.red_diag_clusters(crop, healthy_refs[slot]) >= 1:
             return "injured"
         return "healthy"
     return "unknown"
@@ -223,6 +221,7 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     if anchor is None:
         print(f"[{name}] 开局帧无锚点，跳过")
         return
+    global_anchor = anchor
     scale = anchor["scale"]
     apply_hook_cfg(resolved, anchor, name)
     refs = build_refs(scale)
@@ -243,10 +242,8 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     rows = []
     for fname in frame_names:
         frame = cv2.imread(os.path.join(frame_dir, fname))
-        anchor = get_anchor(frame, tpl) if get_anchor else anchor
-        if anchor is None:
-            rows.append([fname, "-", "-", "-", "-", "-", "-", "-", "无 HUD"])
-            continue
+        cur_anchor = get_anchor(frame, tpl) if get_anchor else None
+        anchor = cur_anchor if cur_anchor is not None else global_anchor
         resolved = hud_regions.resolve_regions(cfg, anchor)
         apply_hook_cfg(resolved, anchor, name)
         states = []
