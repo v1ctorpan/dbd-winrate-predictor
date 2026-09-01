@@ -1,3 +1,4 @@
+import json
 import os
 
 import cv2
@@ -9,10 +10,14 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(BASE, "picture", "test1")
 CFG = os.path.join(BASE, "config", "hud_regions.json")
 GEN_TPL = os.path.join(BASE, "picture", "gen.jpg")
+DIGIT_REFS_DIR = os.path.join(BASE, "asset", "gens_digits")
+DIGIT_REFS_JSON = os.path.join(DIGIT_REFS_DIR, "refs.json")
 
 DIGIT_X = 29
 GEN_ICON_THR = 0.70
 DIGIT_THR = 0.55
+LOW_THR = 0.45
+TRACK_NCC = 0.85
 
 DIGIT_REFS_SRC = {
     5: ["frame_0001"],
@@ -39,6 +44,22 @@ def _match_gen_icon(crop, gen, anchor):
     res = cv2.matchTemplate(crop, t, cv2.TM_CCOEFF_NORMED)
     _, maxv, _, _ = cv2.minMaxLoc(res)
     return float(maxv)
+
+def load_digit_refs():
+    """从 asset/gens_digits 加载通用高清数字模板库。返回 {digit: [img,...]}。"""
+    with open(DIGIT_REFS_JSON) as f:
+        meta = json.load(f)
+    refs = {}
+    for digit, files in meta.items():
+        imgs = []
+        for fn in files:
+            path = os.path.join(DIGIT_REFS_DIR, fn)
+            img = cv2.imread(path)
+            if img is not None:
+                imgs.append(img)
+        if imgs:
+            refs[int(digit)] = imgs
+    return refs
 
 def build_digit_refs():
     cfg = hud_regions.load_regions(CFG)
@@ -103,11 +124,103 @@ def count_gens(frame, resolved, refs, gen=None, anchor=None, gen_icon_thr=GEN_IC
         return None
     return 0
 
+
+class GensTracker:
+    """状态化 gens 数字识别器。
+
+    利用 gens 数字的时序特性提升鲁棒性：
+    1. 帧间数字框 NCC 高 -> 沿用前一帧结果（免模板匹配）
+    2. 模板重识别
+    3. 递减约束：识别结果大于前一帧时沿用前一帧（gens 只减不增）
+
+    状态（prev_digit / prev_crop）跨帧保留，换局时调用 reset()。
+    """
+
+    def __init__(self, refs, gen=None, icon_thr=GEN_ICON_THR,
+                 digit_thr=DIGIT_THR, track_ncc=TRACK_NCC, low_thr=LOW_THR):
+        self.refs = refs
+        self.gen = gen if gen is not None else cv2.imread(GEN_TPL)
+        self.icon_thr = icon_thr
+        self.digit_thr = digit_thr
+        self.track_ncc = track_ncc
+        self.low_thr = low_thr
+        self.prev_digit = None
+        self.prev_crop = None
+
+    def reset(self):
+        self.prev_digit = None
+        self.prev_crop = None
+
+    def update(self, frame, resolved, anchor):
+        """处理单帧，返回 gens 数字（1-5 / 0 / None）。状态跨帧保留。"""
+        b = resolved["gens_row"]
+        crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+        g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+        if int((g > 100).sum()) < 20:
+            self.prev_digit = None
+            self.prev_crop = None
+            return None
+
+        if anchor is None:
+            anchor = {"scale": 1.0}
+
+        if _match_gen_icon(crop, self.gen, anchor) >= self.icon_thr:
+            digit_w = int(DIGIT_X * anchor["scale"])
+            digit_crop = crop[:, 0:digit_w]
+
+            # 1) 帧间沿用：与前一帧数字框高度相似则沿用结果
+            if (self.prev_crop is not None and self.prev_digit is not None):
+                sim = _ncc(digit_crop, self.prev_crop)
+                if sim >= self.track_ncc:
+                    self.prev_crop = digit_crop
+                    return self.prev_digit
+
+            # 2) 模板重识别
+            dh, dw = digit_crop.shape[:2]
+            best, best_score = None, -1.0
+            for digit, imgs in self.refs.items():
+                for ref in imgs:
+                    r = ref
+                    if r.shape[:2] != (dh, dw):
+                        r = cv2.resize(r, (dw, dh), interpolation=cv2.INTER_AREA)
+                    s = _ncc(digit_crop, r)
+                    if s > best_score:
+                        best_score, best = s, digit
+
+            if best is not None and best_score >= self.digit_thr:
+                # 3) 递减约束：gens 只减不增，识别结果大于前帧则沿用前帧
+                if self.prev_digit is not None and best > self.prev_digit:
+                    self.prev_crop = digit_crop
+                    return self.prev_digit
+                self.prev_digit = best
+                self.prev_crop = digit_crop
+                return best
+
+            # 4) 模板分数不足：best 仍明确(>=LOW_THR)且符合递减则采纳；
+            #    否则若前一帧有效则沿用（防御渲染噪声）
+            if (best is not None and best_score >= self.low_thr
+                    and (self.prev_digit is None or best <= self.prev_digit)):
+                self.prev_digit = best
+                self.prev_crop = digit_crop
+                return best
+            if self.prev_digit is not None and self.prev_digit in (1, 2, 3, 4, 5):
+                self.prev_crop = digit_crop
+                return self.prev_digit
+            self.prev_digit = None
+            self.prev_crop = None
+            return None
+
+        # 图标消失 -> 0（所有发电机修完）
+        self.prev_digit = 0
+        self.prev_crop = None
+        return 0
+
 def main():
     cfg = hud_regions.load_regions(CFG)
     cfg["template"] = os.path.join(BASE, "picture", "gen.jpg")
     resolved = hud_regions.resolve_regions(cfg, cfg["anchor"])
-    refs = build_digit_refs()
+    refs = load_digit_refs()
     gen = cv2.imread(os.path.join(BASE, "picture", "gen.jpg"))
 
     truth = {
@@ -117,12 +230,13 @@ def main():
     }
     print(f"{'frame':12} {'gens':6} {'truth':6} {'ok'}")
     all_ok = True
+    tracker = GensTracker(refs, gen=gen)
     for fname in sorted(os.listdir(SRC)):
         if not fname.endswith(".jpg"):
             continue
         stem = fname[:-4]
         frame = cv2.imread(os.path.join(SRC, fname))
-        got = count_gens(frame, resolved, refs, gen=gen, anchor=cfg["anchor"])
+        got = tracker.update(frame, resolved, cfg["anchor"])
         exp = truth.get(stem)
         ok = got == exp
         all_ok = all_ok and ok

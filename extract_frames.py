@@ -42,9 +42,9 @@ def extract_frames(video, out_dir, interval=2, max_frames=None):
 
 
 if __name__ == "__main__":
-    video = os.path.join(BASE, "picture", "raw_videos", "BV1Uu8z6eEVM.mp4")
-    out = os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
-    interval = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-    max_frames = int(sys.argv[2]) if len(sys.argv) > 2 else None
+    video = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE, "picture", "raw_videos", "BV1Uu8z6eEVM.mp4")
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
+    interval = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+    max_frames = int(sys.argv[4]) if len(sys.argv) > 4 else None
     n = extract_frames(video, out, interval=interval, max_frames=max_frames)
     print(f"extracted {n} frames -> {out}")

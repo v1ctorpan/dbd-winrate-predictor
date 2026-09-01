@@ -89,7 +89,7 @@ def main():
     cfg = hud_regions.load_regions(CFG)
     tpl = cv2.imread(ANCHOR_TPL)
     gen = cv2.imread(os.path.join(BASE, "picture", "gen.jpg"))
-    digit_refs = gens_counter.build_digit_refs()
+    digit_refs = gens_counter.load_digit_refs()
 
     rows = []
     ref_anchor = (121, 847)  # 主流对局 HUD 锚点位置

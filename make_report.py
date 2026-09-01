@@ -283,17 +283,8 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     refs = build_refs(scale)
     refs["healthy"] = build_opening_refs(opening, resolved)["healthy"]
     icon_tpl = load_official_icons()
-    if name == "BV1Uu8z6eEVM":
-        digit_refs = gens_counter.build_digit_refs_from_video(
-            frame_dir, resolved,
-            {5: ["frame_00_20", "frame_00_30", "frame_11_00"],
-             4: ["frame_01_30", "frame_03_20"],
-             3: ["frame_03_30", "frame_13_30"],
-             2: ["frame_05_40", "frame_14_00"],
-             1: ["frame_09_10", "frame_15_30"]},
-            scale)
-    else:
-        digit_refs = gens_counter.build_digit_refs()
+    digit_refs = gens_counter.load_digit_refs()
+    gens_tracker = gens_counter.GensTracker(digit_refs, gen=gen)
 
     # 稀疏采样检测换局点：gens 从非 5 跳回 5 视为新一局开始
     swap_frames = _detect_match_swaps(
@@ -321,13 +312,14 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
         apply_hook_cfg(resolved, anchor, name)
         if fname in swap_set:
             refs["healthy"] = build_opening_refs(frame, resolved)["healthy"]
+            gens_tracker.reset()
         states = []
         for i in range(1, 5):
             b = resolved[f"survivor_p{i}"]
             crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
             states.append(classify(crop, i - 1, refs, icon_tpl))
         hooks = hook_counter.count_all(frame, resolved, slots)
-        gens = gens_counter.count_gens(frame, resolved, digit_refs, gen=gen, anchor=anchor)
+        gens = gens_tracker.update(frame, resolved, anchor)
         flags = []
         for i, st in enumerate(states):
             if st == "unknown":
