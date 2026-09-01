@@ -44,16 +44,27 @@ def build_digit_refs():
     cfg = hud_regions.load_regions(CFG)
     cfg["template"] = os.path.join(BASE, "picture", "gen.jpg")
     resolved = hud_regions.resolve_regions(cfg, cfg["anchor"])
+    return _build_refs(resolved, SRC, DIGIT_REFS_SRC, scale=1.0)
+
+def build_digit_refs_from_video(frame_dir, resolved, digit_frames, scale):
+    """从指定视频按显式帧映射构建数字参考（数字宽度=DIGIT_X*scale）。"""
+    return _build_refs(resolved, frame_dir, digit_frames, scale)
+
+def _build_refs(resolved, frame_dir, digit_frames, scale):
     b = resolved["gens_row"]
+    digit_w = int(DIGIT_X * scale)
     refs = {}
-    for digit, frames in DIGIT_REFS_SRC.items():
+    for digit, frames in digit_frames.items():
         imgs = []
         for f in frames:
-            frame = cv2.imread(os.path.join(SRC, f + ".jpg"))
+            path = os.path.join(frame_dir, f + ".jpg")
+            if not os.path.exists(path):
+                path = os.path.join(frame_dir, f + ".0.jpg")
+            frame = cv2.imread(path)
             if frame is None:
                 continue
             crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
-            imgs.append(crop[:, 0:DIGIT_X])
+            imgs.append(crop[:, 0:digit_w])
         if imgs:
             refs[digit] = imgs
     return refs

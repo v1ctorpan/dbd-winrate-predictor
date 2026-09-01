@@ -209,7 +209,6 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     all_names = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
     cfg = hud_regions.load_regions(CFG)
     tpl = cv2.imread(ANCHOR_TPL)
-    digit_refs = gens_counter.build_digit_refs()
     gen = cv2.imread(os.path.join(BASE, "picture", "gen.jpg"))
 
     out_dir = os.path.join(REPORT_DIR, name)
@@ -227,6 +226,17 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     refs = build_refs(scale)
     refs["healthy"] = build_opening_refs(opening, resolved)["healthy"]
     icon_tpl = load_official_icons()
+    if name == "BV1Uu8z6eEVM":
+        digit_refs = gens_counter.build_digit_refs_from_video(
+            frame_dir, resolved,
+            {5: ["frame_00_20", "frame_00_30", "frame_11_00"],
+             4: ["frame_01_30", "frame_03_20"],
+             3: ["frame_03_30", "frame_13_30"],
+             2: ["frame_05_40", "frame_14_00"],
+             1: ["frame_09_10", "frame_15_30"]},
+            scale)
+    else:
+        digit_refs = gens_counter.build_digit_refs()
 
     frame_names = all_names
     if sample is not None and sample < len(frame_names):

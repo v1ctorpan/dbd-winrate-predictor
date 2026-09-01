@@ -12,6 +12,7 @@ import gens_counter
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG = os.path.join(BASE, "config", "hud_regions.json")
 SRC = os.path.join(BASE, "picture", "test1")
+BV1 = os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
 
 TRUTH = {
     "frame_0000": None,
@@ -47,6 +48,28 @@ class TestGensCounter(unittest.TestCase):
             self.assertIsNotNone(frame, f"frame not loaded: {name}")
             with self.subTest(frame=name):
                 got = gens_counter.count_gens(frame, self.resolved, self.refs)
+                self.assertEqual(got, expected)
+
+    def test_bv1_video_refs(self):
+        ga = {"x": 121, "y": 847, "w": 45, "h": 41, "scale": 1.3}
+        resolved = hud_regions.resolve_regions(hud_regions.load_regions(CFG), ga)
+        refs = gens_counter.build_digit_refs_from_video(
+            BV1, resolved,
+            {5: ["frame_00_20", "frame_00_30", "frame_11_00"],
+             4: ["frame_01_30", "frame_03_20"],
+             3: ["frame_03_30", "frame_13_30"],
+             2: ["frame_05_40", "frame_14_00"],
+             1: ["frame_09_10", "frame_15_30"]}, 1.3)
+        gen = cv2.imread(os.path.join(BASE, "picture", "gen.jpg"))
+        checks = {
+            "frame_00_30.0.jpg": 5, "frame_02_10.0.jpg": 4,
+            "frame_04_40.0.jpg": 3, "frame_05_50.0.jpg": 2,
+            "frame_09_10.0.jpg": 1, "frame_15_40.0.jpg": 1,
+        }
+        for fname, expected in checks.items():
+            with self.subTest(frame=fname):
+                frame = cv2.imread(os.path.join(BV1, fname))
+                got = gens_counter.count_gens(frame, resolved, refs, gen=gen, anchor=ga)
                 self.assertEqual(got, expected)
 
 
