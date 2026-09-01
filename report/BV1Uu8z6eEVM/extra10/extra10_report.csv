@@ -1,0 +1,11 @@
+﻿frame,scale,p1,p2,p3,p4,hooks,gens,机器标注
+frame_00_00.0.jpg,1.30,healthy,healthy,healthy,healthy,0/0/0/0,5,正常
+frame_01_30.0.jpg,1.30,injured,healthy,healthy,healthy,0/0/0/0,4,正常
+frame_03_00.0.jpg,1.30,injured,injured,healthy,healthy,1/0/0/0,4,正常
+frame_04_00.0.jpg,1.30,healthy,injured,healthy,hooked,1/1/0/1,3,正常
+frame_06_30.0.jpg,1.30,healthy,healthy,hooked,healthy,1/2/1/1,2,p2=healthy(用户确认刚恢复)
+frame_07_50.0.jpg,1.30,healthy,dying,healthy,healthy,1/2/1/1,2,正常
+frame_08_40.0.jpg,1.30,healthy,dead,healthy,healthy,1/2/1/1,2,正常
+frame_11_00.0.jpg,1.30,healthy,healthy,healthy,healthy,0/0/0/0,5,p4未知
+frame_12_30.0.jpg,1.30,injured,healthy,healthy,hooked,0/0/0/1,5,正常
+frame_16_30.0.jpg,1.30,injured,injured,injured,healthy,0/0/0/2,0,p4未知
