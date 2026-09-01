@@ -51,7 +51,7 @@ def find_gen_anchors(frame, template, scales=SCALES, min_score=0.70):
     best_per_cluster.sort(key=lambda m: -m["scale"])
     return best_per_cluster
 
-def detect_anchor(frame, template, prior=None, pos_tol=15, **kwargs):
+def detect_anchor(frame, template, prior=None, pos_tol=15, snap=2, **kwargs):
     cands = find_gen_anchors(frame, template, **kwargs)
     if not cands:
         return None
@@ -65,6 +65,10 @@ def detect_anchor(frame, template, prior=None, pos_tol=15, **kwargs):
     else:
         m = max(cands, key=lambda m: m["score"])
     x0, y0, x1, y1 = m["box"]
+    # 去抖：检测位置与先验偏移 <= snap 像素时锁定到先验，消除亚像素抖动
+    if prior is not None and abs(x0 - px) <= snap and abs(y0 - py) <= snap:
+        x0, y0 = px, py
+        x1, y1 = px + m["box"][2] - m["box"][0], py + m["box"][3] - m["box"][1]
     return {
         "x": x0,
         "y": y0,

@@ -205,6 +205,63 @@ def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8):
     return frame, anchor0, hud_regions.resolve_regions(cfg, anchor0)
 
 
+def _detect_match_swaps(frame_dir, all_names, cfg, tpl, gen, anchor,
+                        resolved, digit_refs, get_anchor, step=10):
+    """稀疏采样 gens，返回换局点帧名列表（gens 从非 5 跳回 5 的位置）。
+    换局后幸存者角色可能变化，需为每局重建 healthy 参考。"""
+    swaps = []
+    prev_g = None
+    for i in range(0, len(all_names), step):
+        frame = cv2.imread(os.path.join(frame_dir, all_names[i]))
+        if frame is None:
+            continue
+        cur = get_anchor(frame, tpl) or anchor
+        r = hud_regions.resolve_regions(cfg, cur)
+        apply_hook_cfg(r, cur, "BV1Uu8z6eEVM")
+        g = gens_counter.count_gens(frame, r, digit_refs, gen=gen, anchor=cur)
+        if prev_g is not None and prev_g not in (5, None) and g == 5:
+            # 精化：从采样点向前找第一个 gens=5 的帧作为精确换局帧
+            exact = _find_swap_start(frame_dir, all_names, i, cfg, tpl, gen,
+                                     anchor, digit_refs, get_anchor)
+            swaps.append(exact)
+        prev_g = g
+    return swaps
+
+
+def _find_swap_start(frame_dir, all_names, idx, cfg, tpl, gen, anchor,
+                     digit_refs, get_anchor, back=30):
+    """从采样点 idx 向前找换局精确起点：跳过前导 gens=5 段，
+    找到最后一个 gens!=5 的帧，其后的第一个 gens=5 帧即换局起点。"""
+    start = max(idx - back, 0)
+    last_non5 = None
+    for j in range(idx, start - 1, -1):
+        frame = cv2.imread(os.path.join(frame_dir, all_names[j]))
+        if frame is None:
+            continue
+        cur = get_anchor(frame, tpl) or anchor
+        r = hud_regions.resolve_regions(cfg, cur)
+        apply_hook_cfg(r, cur, "BV1Uu8z6eEVM")
+        g = gens_counter.count_gens(frame, r, digit_refs, gen=gen, anchor=cur)
+        if g != 5:
+            last_non5 = j
+            break
+    if last_non5 is None:
+        return all_names[idx]
+    for j in range(last_non5 + 1, last_non5 + 1 + back):
+        if j >= len(all_names):
+            break
+        frame = cv2.imread(os.path.join(frame_dir, all_names[j]))
+        if frame is None:
+            continue
+        cur = get_anchor(frame, tpl) or anchor
+        r = hud_regions.resolve_regions(cfg, cur)
+        apply_hook_cfg(r, cur, "BV1Uu8z6eEVM")
+        g = gens_counter.count_gens(frame, r, digit_refs, gen=gen, anchor=cur)
+        if g == 5:
+            return all_names[j]
+    return all_names[idx]
+
+
 def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     all_names = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
     cfg = hud_regions.load_regions(CFG)
@@ -215,7 +272,7 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     ann_dir = os.path.join(out_dir, "annotated")
     os.makedirs(ann_dir, exist_ok=True)
 
-    # 自动挑选开局已渲染 HUD 的帧，以其各角色形象作为该局 healthy 参考
+    # 自动挑选开局已渲染 HUD 的帧，以其各角色形象作为第 1 局 healthy 参考
     opening, anchor, resolved = pick_opening_frame(frame_dir, all_names, get_anchor, tpl, cfg)
     if anchor is None:
         print(f"[{name}] 开局帧无锚点，跳过")
@@ -238,6 +295,11 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     else:
         digit_refs = gens_counter.build_digit_refs()
 
+    # 稀疏采样检测换局点：gens 从非 5 跳回 5 视为新一局开始
+    swap_frames = _detect_match_swaps(
+        frame_dir, all_names, cfg, tpl, gen, anchor, resolved,
+        digit_refs, get_anchor)
+
     frame_names = all_names
     if sample is not None and sample < len(frame_names):
         import random
@@ -250,12 +312,15 @@ def process_video(name, frame_dir, get_anchor, sample=None, seed=42):
     header = ["frame", "scale", "p1", "p2", "p3", "p4",
               "hooks", "gens", "机器标注"]
     rows = []
+    swap_set = set(swap_frames)
     for fname in frame_names:
         frame = cv2.imread(os.path.join(frame_dir, fname))
         cur_anchor = get_anchor(frame, tpl) if get_anchor else None
         anchor = cur_anchor if cur_anchor is not None else global_anchor
         resolved = hud_regions.resolve_regions(cfg, anchor)
         apply_hook_cfg(resolved, anchor, name)
+        if fname in swap_set:
+            refs["healthy"] = build_opening_refs(frame, resolved)["healthy"]
         states = []
         for i in range(1, 5):
             b = resolved[f"survivor_p{i}"]

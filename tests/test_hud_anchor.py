@@ -59,6 +59,14 @@ class TestDetectAnchorWithPrior(unittest.TestCase):
         self.assertAlmostEqual(anchor["x"], REAL_ANCHOR[0], delta=5)
         self.assertAlmostEqual(anchor["y"], REAL_ANCHOR[1], delta=5)
 
+    def test_snap_stabilizes_subpixel_jitter(self):
+        # frame_03_00 无去抖时 detect 到 x=120（先验偏移1px），应锁定回 121,847
+        frame = load("frame_03_00.0.jpg")
+        anchor = hud_anchor.detect_anchor(frame, self.tpl, prior=REAL_ANCHOR)
+        self.assertIsNotNone(anchor)
+        self.assertEqual(anchor["x"], REAL_ANCHOR[0])
+        self.assertEqual(anchor["y"], REAL_ANCHOR[1])
+
 
 class TestDetectAnchorNoPrior(unittest.TestCase):
     @classmethod

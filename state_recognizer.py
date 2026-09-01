@@ -106,17 +106,19 @@ def _hist_match(img, ref):
 
 
 def red_diag_clusters(crop, healthy_ref, diff_thr=40, minlen=10, angle_tol=15,
-                      rho_tol=8, center=(0.7, 0.8), yratio=0.6):
-    """检测受伤红斜线：直方图归一化后中心区域 -45 度斜线，要求延伸到头像下 60%。
-    受伤条纹是横跨头像下部（y >= h*yratio）的斜线；左上角装饰差异被 yratio 排除，
-    亮度/对比度变化被直方图匹配归一化消除。返回簇数。"""
+                      rho_tol=8, center=(0.7, 0.8), yratio=0.5):
+    """检测受伤红斜线：均值对齐后中心区域 -45 度斜线，要求延伸到头像下 50%。
+    受伤条纹是横跨头像下部的斜线；左上角装饰差异被 yratio 排除。
+    只用 R 通道整体均值对齐（而非直方图匹配）以区分整体变亮（HUD/光照，
+    R 均值均匀上升，对齐后无斜线）与局部受伤红斜线（移除整体偏移后仍显著）。
+    返回簇数。"""
     c = crop.astype(np.float32)
     b = healthy_ref.astype(np.float32)
     h, w = c.shape[:2]
     if b.shape[:2] != (h, w):
         b = cv2.resize(b, (w, h), interpolation=cv2.INTER_AREA)
-    if (c[:, :, 2] - b[:, :, 2]).mean() > 0:
-        c = _hist_match(crop, b.astype(np.uint8)).astype(np.float32)
+    c = c.copy()
+    c[:, :, 2] -= (c[:, :, 2] - b[:, :, 2]).mean()
     diff = c[:, :, 2] - b[:, :, 2]
     m = (diff > diff_thr).astype(np.uint8) * 255
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
