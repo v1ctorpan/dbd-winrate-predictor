@@ -2,9 +2,20 @@ import os
 import sys
 
 import cv2
-from tqdm import tqdm
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+def frame_name(t):
+    """t(秒) -> 帧名(不含扩展名)。整秒->frame_MM_SS.0; 半秒->frame_MM_SS.5。"""
+    m, s = divmod(int(t), 60)
+    half = "5" if (t - int(t)) > 0.25 else "0"
+    return f"frame_{m:02d}_{s:02d}.{half}"
 
 
 def extract_frames(video, out_dir, interval=2, max_frames=None):
@@ -16,13 +27,13 @@ def extract_frames(video, out_dir, interval=2, max_frames=None):
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     duration = total / fps
 
-    total_targets = int(duration // interval) + 1
+    total_targets = int(duration / interval) + 1
     if max_frames:
         total_targets = min(total_targets, max_frames)
 
     t = 0.0
     extracted = 0
-    pbar = tqdm(total=total_targets, desc="extracting frames", unit="frame")
+    pbar = tqdm(total=total_targets, desc="extracting frames", unit="frame") if tqdm else None
     while t < duration:
         if max_frames and extracted >= max_frames:
             break
@@ -30,13 +41,14 @@ def extract_frames(video, out_dir, interval=2, max_frames=None):
         ok, frame = cap.read()
         if not ok:
             break
-        m, s = divmod(int(t), 60)
-        name = f"frame_{m:02d}_{s:02d}.0"
+        name = frame_name(t)
         cv2.imwrite(os.path.join(out_dir, name + ".jpg"), frame)
         extracted += 1
-        pbar.update(1)
+        if pbar is not None:
+            pbar.update(1)
         t += interval
-    pbar.close()
+    if pbar is not None:
+        pbar.close()
     cap.release()
     return extracted
 
