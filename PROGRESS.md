@@ -1,7 +1,7 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
 > 最后更新：2026-09-02
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**，无需 per-video 硬编码；**对局序列数据管道设计完成（数据格式 + 模型选型），实现计划已就绪，待执行**。
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**，无需 per-video 硬编码；**多线程数据产线（下载→抽帧→检测→编码）设计已定稿，实现计划已就绪并按 TDD 逐任务执行中**。
 
 ## 1. 项目目标
 
@@ -159,6 +159,15 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 **文件规划**：`dataset_encoder.py`（CSV→JSONL）、`match_dataset.py`（变长批次+截断采样）、`match_model.py`（GRU）、`train_sequence.py`（训练）、`predict_live.py`（实时推理）。
 
 **种子数据**：BV1 结局 label=3、BV16 结局 label=1（人工标注）；test1 为 720p 随机采样帧，不作序列样本。
+
+### 3.6 多线程数据产线（设计定稿，实现进行中）
+
+为把"下载→抽帧→检测→编码"串成自动化产线并支持多线程提速，设计已定稿：`docs/superpowers/specs/2026-09-02-pipeline-multithread-design.md`，实现计划 `docs/superpowers/plans/2026-09-02-pipeline-multithread.md`（5 任务 TDD，直接提交 main 无分支）。
+
+- 抽帧时间精度升级：`parse_time` 支持**半秒精度**，帧名 `frame_MM_SS.0.jpg`（整数秒）/ `frame_MM_SS.5.jpg`（半秒）；`extract_frames.py` 的 `frame_name(t)` 与 `--interval 0.5` 兼容（commit `80bdf87`，全量 34 测试 PASS）。
+- 检测侧复用既有函数：`make_report.pick_opening_frame/build_refs/classify/build_opening_refs`、`calibrator.calibrate_hook_slots`（路径版）、`gens_counter.GensTracker`、`hook_counter.count_all`；新增流式检测器状态机 WAIT_ANCHOR→CALIBRATE(budget=12)→RECORD，`apply_hook_cfg` 扩展支持 hook_names 列表。
+- 编码侧：一局 = 一行 JSONL 追加进 `dataset/videos.jsonl`，`id="{BVid}:{match_no}"`，label=-1 待标注。
+- 任务状态：Task 1（帧命名 + parse_time）✅；Task 2（流式检测器）进行中；Task 3（追加式编码）待执行；Task 4（三线程 run_pipeline）待执行；Task 5（BV1Z58J6bEoi 端到端）待执行。
 
 ## 4. 测试数据与真值
 

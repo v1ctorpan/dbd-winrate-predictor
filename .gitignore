@@ -9,5 +9,8 @@ __pycache__/
 # 临时/日志
 *.log
 
+# 原始视频（体积大，不入库；由 extract_frames 抽帧成 JPG 后跟踪帧目录）
+picture/raw_videos/
+
 # macOS
 .DS_Store
