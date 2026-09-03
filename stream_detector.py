@@ -32,7 +32,8 @@ class StreamingDetector:
     """
 
     def __init__(self, bvid, report_root=None, frames_root=None, cfg_path=CFG,
-                 hook_names=None, budget=12):
+                 hook_names=None, budget=12, wait_window=6, wait_min_frames=3,
+                 wait_min_scale=0.9):
         self.bvid = bvid
         self.report_root = report_root or os.path.join(REPORT, bvid)
         self.frames_root = frames_root or PICTURE
@@ -40,6 +41,9 @@ class StreamingDetector:
         self.tpl = cv2.imread(ANCHOR_TPL)
         self.hook_names = hook_names
         self.budget = budget
+        self.wait_window = wait_window
+        self.wait_min_frames = wait_min_frames
+        self.wait_min_scale = wait_min_scale
         self.state = "WAIT_ANCHOR"
         self.match_no = 0
         self._anchor = None
@@ -55,10 +59,45 @@ class StreamingDetector:
         self._prev_g = None
         self._frame_dir = None
         self._calib = []
+        self._wait_cands = []
+
+    def _wait_anchor(self, frame):
+        """WAIT 状态锚点判定: 跨帧滑动窗口共识。
+        单帧 max-score 会输给菜单小尺度噪声, 需同一位置(±15px)+足够尺度
+        (>=wait_min_scale) 在最近 wait_window 帧中出现 >=wait_min_frames 次才可信。"""
+        cands = hud_anchor.find_gen_anchors(frame, self.tpl)
+        self._wait_cands.append(cands)
+        if len(self._wait_cands) > self.wait_window:
+            self._wait_cands.pop(0)
+        clusters = []
+        for fi, clist in enumerate(self._wait_cands):
+            for c in clist:
+                if c["scale"] < self.wait_min_scale:
+                    continue
+                x, y = c["box"][0], c["box"][1]
+                for cl in clusters:
+                    if (abs(cl["x"] - x) <= 15 and abs(cl["y"] - y) <= 15
+                            and abs(cl["scale"] - c["scale"]) <= 0.25):
+                        cl["frames"].add(fi)
+                        cl["members"].append(c)
+                        break
+                else:
+                    clusters.append({"x": x, "y": y, "scale": c["scale"],
+                                     "frames": {fi}, "members": [c]})
+        last = len(self._wait_cands) - 1
+        stable = [cl for cl in clusters
+                  if len(cl["frames"]) >= self.wait_min_frames and last in cl["frames"]]
+        if not stable:
+            return None
+        best = max(stable, key=lambda cl: (len(cl["frames"]), cl["scale"]))
+        rep = max(best["members"], key=lambda m: m["score"])
+        x0, y0, x1, y1 = rep["box"]
+        return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
+                "score": rep["score"], "scale": rep["scale"]}
 
     def feed(self, frame, fname):
         if self.state == "WAIT_ANCHOR":
-            anchor = hud_anchor.detect_anchor(frame, self.tpl)
+            anchor = self._wait_anchor(frame)
             if anchor is None:
                 return None
             self.match_no += 1

@@ -4,17 +4,30 @@ import tempfile
 import unittest
 
 import cv2
+import numpy as np
 
 import make_report
 import stream_detector as sd
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
+GEN = os.path.join(BASE, "picture", "gen.jpg")
 
 
 def _sorted_frames():
     names = sorted(f for f in os.listdir(SRC) if f.endswith(".jpg"))
     return [(cv2.imread(os.path.join(SRC, f)), f) for f in names]
+
+
+def _pasted_frame(x, y, scale=1.0):
+    """在深灰背景固定位置粘贴放大的 gen 模板，制造可检测锚点帧。"""
+    tpl = cv2.imread(GEN)
+    th, tw = tpl.shape[:2]
+    w, h = int(tw * scale), int(th * scale)
+    t = cv2.resize(tpl, (w, h), interpolation=cv2.INTER_AREA)
+    frame = np.full((1080, 1920, 3), 40, dtype=np.uint8)
+    frame[y:y + h, x:x + w] = t
+    return frame
 
 
 class TestApplyHookCfgMultiVideo(unittest.TestCase):
@@ -40,11 +53,26 @@ class TestStreamingDetector(unittest.TestCase):
     def test_wait_anchor_ignores_blank(self):
         with tempfile.TemporaryDirectory() as d:
             det = sd.StreamingDetector("BV1Uu8z6eEVM", d, d)
-            import numpy as np
             blank = np.full((1080, 1920, 3), 255, dtype=np.uint8)
             r = det.feed(blank, "frame_00_00.0.jpg")
             self.assertIsNone(r)
             self.assertEqual(det.state, "WAIT_ANCHOR")
+
+    def test_wait_requires_stable_position_across_frames(self):
+        """菜单误报每帧位置乱跳, 不应触发开局; 稳定同位置连续出现才开。"""
+        with tempfile.TemporaryDirectory() as d:
+            det = sd.StreamingDetector("BV1Uu8z6eEVM", d, d)
+            jitter = [(200, 300), (900, 700), (1500, 400), (300, 1000),
+                      (1100, 200), (600, 800)]
+            for i, (x, y) in enumerate(jitter):
+                det.feed(_pasted_frame(x, y), f"frame_00_0{i}.0.jpg")
+            self.assertEqual(det.state, "WAIT_ANCHOR")
+            self.assertEqual(det.match_no, 0)
+
+            for i in range(4):
+                det.feed(_pasted_frame(400, 400), f"frame_00_0{i + 10}.0.jpg")
+            self.assertNotEqual(det.state, "WAIT_ANCHOR")
+            self.assertEqual(det.match_no, 1)
 
     def test_single_match_report_and_finish(self):
         with tempfile.TemporaryDirectory() as d:
