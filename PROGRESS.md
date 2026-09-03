@@ -1,7 +1,13 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
-> 最后更新：2026-09-02
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**，无需 per-video 硬编码；**多线程数据产线（下载→抽帧→检测→编码）设计已定稿，实现计划已就绪并按 TDD 逐任务执行中**。
+> 最后更新：2026-09-03
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**，无需 per-video 硬编码；**多线程数据产线（下载→抽帧→检测→编码）Task1-4 已在 main 全部完成（全量 41 测试 PASS），本分支领先 origin/main 3 个提交待推送**；Task5「BV1pht96fEjN 真实视频端到端」在 `data_pipeline` 分支进行中（含 WAIT 菜单误触发 bug 修复，见 3.7）。
+
+## 分支与提交状态（2026-09-03）
+
+- `main`（当前分支）：Task1-4 已提交（`80bdf87` 半秒帧命名/parse_time → `f3de624` 流式检测器 → `8f6f730` dataset_encoder append/read → `83deb92` 三线程 run_pipeline）。**相对 origin/main 领先 3 个提交未推送**。42 测试全绿（main 自身 41 + 分支将带回的稳定性测试会同步于 data_pipeline 合入）。
+- `data_pipeline`：从 main 的 `83deb92` 切出做 Task5，已含 `3c55d96`（WAIT 稳定性修复 + 测试 + PROGRESS），已推送 origin/data_pipeline。修复的代码尚未合回 main，见 §6。
+- **整体待办见 §6**（main 待办 = 推送 + 分支成果合回；分支待办 = Task5 收尾）。
 
 ## 1. 项目目标
 
@@ -167,7 +173,17 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - 抽帧时间精度升级：`parse_time` 支持**半秒精度**，帧名 `frame_MM_SS.0.jpg`（整数秒）/ `frame_MM_SS.5.jpg`（半秒）；`extract_frames.py` 的 `frame_name(t)` 与 `--interval 0.5` 兼容（commit `80bdf87`，全量 34 测试 PASS）。
 - 检测侧复用既有函数：`make_report.pick_opening_frame/build_refs/classify/build_opening_refs`、`calibrator.calibrate_hook_slots`（路径版）、`gens_counter.GensTracker`、`hook_counter.count_all`；新增流式检测器状态机 WAIT_ANCHOR→CALIBRATE(budget=12)→RECORD，`apply_hook_cfg` 扩展支持 hook_names 列表。
 - 编码侧：一局 = 一行 JSONL 追加进 `dataset/videos.jsonl`，`id="{BVid}:{match_no}"`，label=-1 待标注。
-- 任务状态：Task 1（帧命名 + parse_time）✅；Task 2（流式检测器）进行中；Task 3（追加式编码）待执行；Task 4（三线程 run_pipeline）待执行；Task 5（BV1Z58J6bEoi 端到端）待执行。
+- 任务状态：Task 1（帧命名 + parse_time）✅ commit `80bdf87`；Task 2（流式检测器）✅ commit `f3de624`；Task 3（追加式编码）✅ commit `8f6f730`；Task 4（三线程 run_pipeline）✅ commit `83deb92`；Task 5（BV1pht96fEjN 端到端）⏳ 进行中（`data_pipeline` 分支，含 WAIT 稳定性修复）。
+
+### 3.7 WAIT 锚点误触修复（data_pipeline 分支 `3c55d96`，2026-09-03）
+
+> 注：此修复当前在 `data_pipeline` 分支，尚未合回 main（见 §6）。
+
+**现象**：对 BV1pht96fEjN.mp4 跑 0.5s×前 90s 小样本，产出全垃圾——scale 卡 0.40、p1-p4 几乎全 unknown、gens 全 None，整段被当 1 局。
+
+**根因**：`WAIT_ANCHOR` 原用单帧 no-prior `detect_anchor`（取全局 max-score）。视频开头 ~40s 为菜单，scale≈0.4 误报得分 0.79–0.82 **高于真实 HUD 图标（0.70–0.79）**，第 0 帧即命中误报 `(1474,739)@0.40` 开局并以错误先验锁定，真实图标在 `(142,806)@1.5` 永远对不上。
+
+**修复**：改为滑动窗口共识 `_wait_anchor(frame)`——每帧保留 `find_gen_anchors` 全部候选簇（非 max-score 单点），最近 `wait_window`(6) 帧中 `scale>=wait_min_scale`(0.9)、同位置(±15px)+尺度(±0.25) 出现 ≥`wait_min_frames`(3) 次且含当前帧才开局。实测菜单段保持 WAIT、对局段正确转 CALIBRATE→RECORD。新增测试 `test_wait_requires_stable_position_across_frames`。
 
 ## 4. 测试数据与真值
 
@@ -211,6 +227,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 ## 5. 已知问题 / 边界情况
 
 - 画面对话助手无法直接查看图片（模型限制），一切图像分析依赖代码数值 + 用户目视确认
+- **视频开头/局间为菜单时，流式检测器必须跨帧确认锚点**（WAIT 用滑动窗口共识，见 3.7）；单帧 max-score 会被菜单小尺度误报抢占
 - 锚点曾在 frame_0011 被假匹配（scale=1.3 @ (344,567)）污染配置，已用 `fix_anchor.py` 恢复并加 `TRUST_SCORE` 防护
 - 健康基线依赖开局全健康帧；若某局开局即有异常需重新审视
 - 深伤口（Deep Wound）状态尚未实现
@@ -220,13 +237,24 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ## 6. 待办（下一步）
 
-1. **实现对局序列数据管道**（设计+计划已完成，见 3.5）：`dataset_encoder.py` → `match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py`
-2. 处理剩余 HUD 元素：
+**main（当前分支）**：
+1. 推送领先 origin/main 的 3 个提交（`f3de624`/`8f6f730`/`83deb92`）。
+2. 将 `data_pipeline` 分支成果合回 main 并推送：含 `3c55d96`（WAIT 稳定性修复 + 测试 + PROGRESS）；合入后全量回归。
+3. Task5 收尾（配合 data_pipeline 分支进展更新）。
+
+**data_pipeline 分支（Task5 焦点）**：
+4. 深入排查 BV1pht96fEjN 样本 CSV 中 **gens 几乎全程 0** 与 **hooks 全程 0** 的可疑读数（GensTracker 区域/匹配在局内是否失效；hook 槽位不与锚点等比缩放需按新几何复核）。
+5. 修复/确认后全片（14.3min）端到端跑 `run_pipeline.py`（预计 ~55min），产出 match_N 帧/CSV 与 `dataset/videos.jsonl` 的 `BV1pht96fEjN:N` 记录。
+6. 校验数据集行 + 更新 `docs/dataset_format.md` 与 PROGRESS。
+
+**后续规划（已定稿未实现）**：
+7. 实现对局序列数据管道（设计+计划已完成，见 3.5）：`dataset_encoder.py` → `match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py`
+8. 处理剩余 HUD 元素：
    - ~~发电机剩余数：`gens_row` 区域~~ ✅ `gens_counter.py`
    - 大门状态：`gate_ui` 区域
-3. 结算画面自动标注结局（当前种子数据人工标注）
-4. 数据积累：更多视频抽帧 → 编码 → 标注，扩充到上千局
-5. 模型超参调优 + 胜率走势图输出
+9. 结算画面自动标注结局（当前种子数据人工标注）
+10. 数据积累：更多视频抽帧 → 编码 → 标注，扩充到上千局
+11. 模型超参调优 + 胜率走势图输出
 
 ## 7. 环境说明
 
