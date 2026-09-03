@@ -1,0 +1,81 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "deepseek/deepseek-v4-flash",
+  "plugin": ["~/.config/opencode/node_modules/superpowers"],
+  "provider": {
+    "custom": {
+      "models": {
+        "kimi-k3": {
+          "name": "kimi-k3",
+          "id": "kimi-k3",
+          "tool_call": true,
+          "cost": {
+            "input": 0,
+            "output": 0
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 393216
+          },
+          "reasoning": true
+        }
+      },
+      "options": {
+        "baseURL": "https://hgapi.dieqiyun.top",
+        "apiKey": ""
+      }
+    },
+    "deepseek": {
+      "models": {
+        "deepseek-v4-flash": {
+          "name": "deepseek-v4-flash",
+          "id": "deepseek-v4-flash",
+          "tool_call": true,
+          "cost": {
+            "input": 1.5,
+            "output": 4.5,
+            "cache_read": 0.05
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 393216
+          },
+          "reasoning": true
+        },
+        "deepseek-v4-pro": {
+          "name": "deepseek-v4-pro",
+          "id": "deepseek-v4-pro",
+          "tool_call": true,
+          "cost": {
+            "input": 4.5,
+            "output": 13.5,
+            "cache_read": 0.15
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 393216
+          },
+          "reasoning": true
+        },
+        "deepseek-v4-flash-vision-exp": {
+          "name": "deepseek-v4-flash-vision-exp",
+          "id": "deepseek-v4-flash-vision-exp",
+          "tool_call": true,
+          "cost": {
+            "input": 1.5,
+            "output": 4.5,
+            "cache_read": 0.05
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 393216
+          }
+        }
+      },
+      "options": {
+        "baseURL": "https://api.deepseek.com",
+        "apiKey": ""
+      }
+    }
+  }
+}
