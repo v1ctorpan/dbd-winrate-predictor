@@ -149,13 +149,14 @@ def annotate_frame(frame, resolved, slots, states, hooks, gens, scale):
     return out
 
 
-def apply_hook_cfg(resolved, anchor, video_name=None):
+def apply_hook_cfg(resolved, anchor, video_name=None, hook_names=None):
     if not os.path.exists(HOOK_CFG):
         return
     with open(HOOK_CFG, "r", encoding="utf-8") as f:
         import json
         data = json.load(f)
-    if video_name is not None and data.get("video") != video_name:
+    names = hook_names if hook_names is not None else ([video_name] if video_name else [])
+    if not names or data.get("video") not in names:
         return
     for name, rel in data["regions"].items():
         if name in resolved:
