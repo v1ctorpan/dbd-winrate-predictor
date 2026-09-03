@@ -56,6 +56,19 @@ def write_videos_jsonl(records, out_path):
     return len(records)
 
 
+def append_record(videos_path, record):
+    os.makedirs(os.path.dirname(videos_path), exist_ok=True)
+    with open(videos_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    with open(videos_path, encoding="utf-8") as f:
+        return sum(1 for _ in f)
+
+
+def read_records(videos_path):
+    with open(videos_path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 def main():
     spec = [
         ("BV1Uu8z6eEVM", "report/BV1Uu8z6eEVM/detect_report.csv", 3),

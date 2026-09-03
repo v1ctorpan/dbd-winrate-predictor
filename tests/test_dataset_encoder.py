@@ -92,5 +92,20 @@ class TestWriteVideosJsonl(unittest.TestCase):
             self.assertEqual(lines[1]["label"], 1)
 
 
+class TestAppendRecord(unittest.TestCase):
+    def test_append_then_read_roundtrip(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "videos.jsonl")
+            de.append_record(p, {"id": "BV1Z:1", "title": "", "url": "",
+                                 "features": [[0.0] * 30], "label": -1})
+            de.append_record(p, {"id": "BV1Z:2", "title": "", "url": "",
+                                 "features": [[1.0] * 30], "label": -1})
+            recs = de.read_records(p)
+            self.assertEqual(len(recs), 2)
+            self.assertEqual(recs[0]["id"], "BV1Z:1")
+            self.assertEqual(recs[1]["id"], "BV1Z:2")
+            self.assertEqual(recs[1]["label"], -1)
+
+
 if __name__ == "__main__":
     unittest.main()
