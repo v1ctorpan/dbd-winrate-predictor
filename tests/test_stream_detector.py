@@ -99,6 +99,43 @@ class TestStreamingDetector(unittest.TestCase):
             self.assertTrue(os.path.isdir(match_dir))
             self.assertGreaterEqual(len(os.listdir(match_dir)), 1)
 
+    def test_hook_slots_recalibrated_after_late_hooks(self):
+        """开局 12 帧无人上钩 -> 一次性槽位校准为空; 后续出现上钩竖线时,
+        前向滚动重校准应锁定槽位, 使后续帧 hooks>0 (回归: 之前永远 0)。"""
+        import hud_regions
+        cfg = hud_regions.load_regions(os.path.join(BASE, "config", "hud_regions.json"))
+        x, y, scale = 400, 400, 1.0
+        anchor = {"x": x, "y": y, "w": 35, "h": 32, "scale": scale}
+        resolved = hud_regions.resolve_regions(cfg, anchor)
+        b = resolved["hook_p1"]
+        c1, c2 = b["x0"] + 3, b["x0"] + 7
+
+        def painted():
+            fr = _pasted_frame(x, y, scale)
+            fr[b["y0"]:b["y1"], c1] = 255
+            fr[b["y0"]:b["y1"], c2] = 255
+            return fr
+
+        with tempfile.TemporaryDirectory() as d:
+            frames_root = os.path.join(d, "frames")
+            report_root = os.path.join(d, "report")
+            det = sd.StreamingDetector("BV1Uu8z6eEVM", report_root, frames_root)
+            det.budget = 6
+            idx = 0
+            for _ in range(8):  # WAIT+校准窗口, 无任何上钩线
+                det.feed(_pasted_frame(x, y, scale), f"f{idx:05d}.jpg"); idx += 1
+            for _ in range(14):  # RECORD, 出现上钩竖线
+                det.feed(painted(), f"f{idx:05d}.jpg"); idx += 1
+            det.finish()
+            csv_path = os.path.join(report_root, "BV1Uu8z6eEVM",
+                                    "match_1", "detect_report.csv")
+            self.assertTrue(os.path.exists(csv_path), csv_path)
+            with open(csv_path, newline="", encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+            hooked_rows = [r for r in rows if r["hooks"].split("/")[0] != "0"]
+            self.assertGreater(len(hooked_rows), 0,
+                               "late hook lines should eventually be counted")
+
 
 if __name__ == "__main__":
     unittest.main()

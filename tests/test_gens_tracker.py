@@ -120,6 +120,19 @@ class TestGensTracker(unittest.TestCase):
             with self.subTest(frame=name):
                 self.assertEqual(results[name], expected, f"{name}: {results[name]} != {expected}")
 
+    def test_borderline_gen_icon_still_reads_digit(self):
+        """BV1pht96fEjN 的 gens 图标 NCC≈0.66~0.69，低于 GEN_ICON_THR=0.70
+        会被误判成 0；实际无人修机、真值为 5。回归测试：低分图标不得跳 0。"""
+        anchor = {"x": 142, "y": 806, "scale": 1.5}
+        for fn in ("gens_borderline_a.png", "gens_borderline_b.png"):
+            crop = cv2.imread(os.path.join(BASE, "picture", "BV1pht96fEjN", fn))
+            self.assertIsNotNone(crop, fn)
+            h, w = crop.shape[:2]
+            resolved = {"gens_row": {"x0": 0, "y0": 0, "x1": w, "y1": h}}
+            tracker = gens_counter.GensTracker(self.refs, gen=self.gen)
+            got = tracker.update(crop, resolved, anchor)
+            self.assertEqual(got, 5, f"{fn}: {got} != 5")
+
     def test_reset_clears_state(self):
         ga = {"x": 121, "y": 847, "w": 45, "h": 41, "scale": 1.3}
         tracker = gens_counter.GensTracker(self.refs, gen=self.gen)

@@ -2,6 +2,7 @@ import csv
 import os
 
 import cv2
+import numpy as np
 
 import calibrator
 import gens_counter
@@ -19,6 +20,32 @@ REPORT = os.path.join(BASE, "report")
 HEADER = ["frame", "scale", "p1", "p2", "p3", "p4", "hooks", "gens", "机器标注"]
 
 
+def _has_hook_line_candidate(frame, resolved):
+    """RECORD 帧是否在任一 hook 区域内出现合格竖线（与 calibrate_hook_slots 同判据）。
+    槽位尚未锁定时用它在低开销下触发滚动校准，避免无上钩期间反复读盘。"""
+    g = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    for i in range(1, 5):
+        b = resolved[f"hook_p{i}"]
+        if b["y1"] - b["y0"] <= 0 or b["x1"] - b["x0"] <= 4:
+            continue
+        crop = g[max(b["y0"], 0):b["y1"],
+                 max(0, b["x0"] - 2):min(g.shape[1], b["x1"] + 2)]
+        if crop.size == 0:
+            continue
+        colmax = np.array([float(crop[:, x].max()) for x in range(crop.shape[1])])
+        bg = float(np.median(colmax))
+        thr = bg + hook_counter.MARGIN
+        min_top = int((b["y1"] - b["y0"]) * hook_counter.TOP_FRAC)
+        min_bottom = int((b["y1"] - b["y0"]) * hook_counter.BOTTOM_FRAC)
+        for x in range(max(b["x0"], 0) + 2, min(b["x1"], g.shape[1]) - 1):
+            rr = hook_counter._longest_run_range(
+                g[max(b["y0"], 0):b["y1"], x], thr)
+            if len(rr) >= hook_counter.MIN_LINE_RUN and rr[0] <= min_top \
+                    and rr[-1] >= min_bottom:
+                return True
+    return False
+
+
 class StreamingDetector:
     """逐帧流式 HUD 检测。状态机：
     WAIT_ANCHOR: 无锚点, 每帧尝试 detect_anchor, 命中即落盘开新局进 CALIBRATE
@@ -33,7 +60,7 @@ class StreamingDetector:
 
     def __init__(self, bvid, report_root=None, frames_root=None, cfg_path=CFG,
                  hook_names=None, budget=12, wait_window=6, wait_min_frames=3,
-                 wait_min_scale=0.9):
+                 wait_min_scale=0.9, slot_win=40, slot_retry=6):
         self.bvid = bvid
         self.report_root = report_root or os.path.join(REPORT, bvid)
         self.frames_root = frames_root or PICTURE
@@ -44,6 +71,8 @@ class StreamingDetector:
         self.wait_window = wait_window
         self.wait_min_frames = wait_min_frames
         self.wait_min_scale = wait_min_scale
+        self.slot_win = slot_win
+        self.slot_retry = slot_retry
         self.state = "WAIT_ANCHOR"
         self.match_no = 0
         self._anchor = None
@@ -60,6 +89,9 @@ class StreamingDetector:
         self._frame_dir = None
         self._calib = []
         self._wait_cands = []
+        self._slot_win = []
+        self._slot_idx = 0
+        self._slot_try = -1
 
     def _wait_anchor(self, frame):
         """WAIT 状态锚点判定: 跨帧滑动窗口共识。
@@ -108,6 +140,7 @@ class StreamingDetector:
             self.state = "CALIBRATE"
             self._calib = [(fname, frame.copy())]
             self._anchor = anchor
+            self._reset_slot_calib()
             return None
 
         if self.state == "CALIBRATE":
@@ -158,6 +191,28 @@ class StreamingDetector:
             self._record(frame, fn)
         self._calib = []
 
+    def _reset_slot_calib(self):
+        self._slot_win = []
+        self._slot_idx = 0
+        self._slot_try = -1
+
+    def _maybe_recalibrate_slots(self, frame, resolved):
+        """前向滚动槽位校准: 开局槽位为空时(前 12 帧无人上钩),
+        对最近 slot_win 帧重复校准直到锁定。仅在有竖线候选帧触发, 控制开销。"""
+        if self._slots:
+            return
+        if not self._slot_win:
+            return
+        self._slot_idx += 1
+        if self._slot_idx - self._slot_try < self.slot_retry:
+            return
+        if not _has_hook_line_candidate(frame, resolved):
+            return
+        self._slot_try = self._slot_idx
+        got = calibrator.calibrate_hook_slots(list(self._slot_win), resolved)
+        if got:
+            self._slots = got
+
     def _record(self, frame, fname):
         cur = hud_anchor.detect_anchor(frame, self.tpl,
                                        prior=(self._anchor["x"], self._anchor["y"]))
@@ -185,12 +240,17 @@ class StreamingDetector:
             self._prev_g = None
             self._gens_tracker.reset()
             self.state = "CALIBRATE"
+            self._reset_slot_calib()
             return {"match_end": self.match_no - 1,
                     "csv": os.path.join(self.report_root, self.bvid,
                                         f"match_{self.match_no - 1}", "detect_report.csv")}
 
         # 非换局 RECORD 帧落盘到当前局
         self._persist(frame, fname)
+        self._slot_win.append(os.path.join(self._frame_dir, fname))
+        if len(self._slot_win) > self.slot_win:
+            self._slot_win.pop(0)
+        self._maybe_recalibrate_slots(frame, resolved)
         self._prev_g = gens
         flags = []
         for i, st in enumerate(states):

@@ -14,7 +14,9 @@ DIGIT_REFS_DIR = os.path.join(BASE, "asset", "gens_digits")
 DIGIT_REFS_JSON = os.path.join(DIGIT_REFS_DIR, "refs.json")
 
 DIGIT_X = 29
-GEN_ICON_THR = 0.70
+# 跨视频实测: 有 gen 图标帧 NCC≥0.66 (BV1pht96fEjN 最低 0.66), "全修完/大门"帧 NCC≤0.28。
+# 旧值 0.70 会让 NCC≈0.66~0.69 的真实图标误入"消失→0"分支。
+GEN_ICON_THR = 0.55
 DIGIT_THR = 0.55
 LOW_THR = 0.45
 TRACK_NCC = 0.85

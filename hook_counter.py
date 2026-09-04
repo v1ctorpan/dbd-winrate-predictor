@@ -34,18 +34,36 @@ def count_hooks(frame, resolved, i, slots, margin=MARGIN, min_run=MIN_LINE_RUN,
     h = b["y1"] - b["y0"]
     min_top = int(h * top_frac)
     min_bottom = int(h * bottom_frac)
-    count = 0
-    for s in slots:
-        found = False
-        for x in range(s - tol, s + tol + 1):
-            if b["x0"] <= x < b["x1"]:
-                rr = _longest_run_range(g[b["y0"]:b["y1"], x], thr)
-                if len(rr) >= min_run and rr[0] <= min_top and rr[-1] >= min_bottom:
-                    found = True
-                    break
-        if found:
-            count += 1
-    return count
+
+    # 区域内(槽位邻域范围内)满足"长亮段"的绝对列集合
+    lo = max(b["x0"], 0)
+    hi = min(b["x1"], g.shape[1])
+    lit = [x for x in range(lo, hi)
+           if _is_line(g[b["y0"]:b["y1"], x], thr, min_run, min_top, min_bottom)]
+    if not lit:
+        return 0
+    # 防 overlay: 单一连通亮带若贯穿两槽邻域(如受伤/追击红晕盖过 pip 区) -> 非钩线
+    if len(slots) >= 2:
+        s0, s1 = sorted(slots)[:2]
+        a_hi, b_lo = s0 + tol, s1 - tol
+        run_lo = run_hi = lit[0]
+        for x in lit[1:]:
+            if x == run_hi + 1:
+                run_hi = x
+            else:
+                if run_lo <= a_hi and run_hi >= b_lo:
+                    return 0
+                run_lo = run_hi = x
+        if run_lo <= a_hi and run_hi >= b_lo:
+            return 0
+    lit_slots = [s for s in slots
+                 if any(s - tol <= x <= s + tol for x in lit)]
+    return len(lit_slots)
+
+
+def _is_line(col, thr, min_run, min_top, min_bottom):
+    rr = _longest_run_range(col, thr)
+    return len(rr) >= min_run and rr[0] <= min_top and rr[-1] >= min_bottom
 
 
 def count_all(frame, resolved, slots):

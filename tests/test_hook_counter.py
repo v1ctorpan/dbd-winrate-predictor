@@ -4,6 +4,7 @@ import sys
 import unittest
 
 import cv2
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -121,6 +122,38 @@ class TestHookCounter720p(_BaseCounts):
             frame, resolved = self._resolved(fname)
             out = hook_counter.count_all(frame, resolved, self.SLOTS)
             self.assertEqual("".join(map(str, out)), truth, f"{fname} 真值 {truth}")
+
+
+class TestCountHooksAntiBlob(unittest.TestCase):
+    """真钩 = slot±1 两个 3 列簇且簇间空隙不亮; 连续亮带跨两槽=overlay, 应判 0。"""
+
+    REGION = {"x0": 200, "y0": 400, "x1": 250, "y1": 430}
+    SLOTS = [210, 214]
+
+    def _resolved(self):
+        return {f"hook_p{i}": dict(self.REGION) for i in range(1, 5)}
+
+    def _frame(self, lit_cols):
+        frame = np.full((1080, 1920, 3), 40, dtype=np.uint8)
+        for x in lit_cols:
+            frame[400:430, x] = 255
+        return frame
+
+    def test_single_slot_cluster_counts_one(self):
+        got = hook_counter.count_hooks(self._frame([209, 210, 211]),
+                                       self._resolved(), 1, self.SLOTS)
+        self.assertEqual(got, 1)
+
+    def test_two_clean_clusters_count_two(self):
+        got = hook_counter.count_hooks(self._frame([209, 210, 211, 213, 214, 215]),
+                                       self._resolved(), 1, self.SLOTS)
+        self.assertEqual(got, 2)
+
+    def test_wide_band_over_both_slots_is_overlay_zero(self):
+        got = hook_counter.count_hooks(self._frame(list(range(208, 217))),
+                                       self._resolved(), 1, self.SLOTS)
+        self.assertEqual(got, 0)
+
 
 
 if __name__ == "__main__":
