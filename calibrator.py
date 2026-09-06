@@ -75,9 +75,13 @@ def calibrate_video(frame_paths, gen_tpl_path, cfg_path, refs_dir, pos_tol=15, m
 def calibrate_hook_slots(frame_paths, resolved, margin=hook_counter.MARGIN,
                          min_run=hook_counter.MIN_LINE_RUN,
                          top_frac=hook_counter.TOP_FRAC, bottom_frac=hook_counter.BOTTOM_FRAC,
-                         min_gap=4, max_gap=12):
+                         min_gap=4, max_gap=12, min_frames=2):
     """通过"同帧共现"找槽位: 真实钩线成对出现(两槽位常同时亮起),
-    而区域内的静态装饰线(如头像轮廓)独立出现, 参与共现次数低, 会被排除。"""
+    而区域内的静态装饰线(如头像轮廓)独立出现, 参与共现次数低, 会被排除。
+
+    跨帧支持度: 候选 (a,b) 对必须在 >= min_frames 个不同帧中都出现才被采纳,
+    防止开局 overlay 闪现(1~2 帧的宽亮带)被误锁为槽位。"""
+    pair_frames = {}
     cols_by_item = {}
     for i in range(1, 5):
         b = resolved[f"hook_p{i}"]
@@ -102,15 +106,20 @@ def calibrate_hook_slots(frame_paths, resolved, margin=hook_counter.MARGIN,
     if not cols_by_item:
         return []
     co = {}
-    for hit in cols_by_item.values():
+    for (_, fname), hit in cols_by_item.items():
         cs = sorted(hit)
         for a in cs:
             for b in cs:
                 d = b - a
                 if min_gap <= d <= max_gap:
-                    co[(a, b)] = co.get((a, b), 0) + 1
+                    frames = co.setdefault((a, b), set())
+                    frames.add(fname)
     if not co:
         return []
-    best = max(co.items(), key=lambda kv: kv[1])
+    qualified = [(ab, len(frames)) for ab, frames in co.items()
+                 if len(frames) >= min_frames]
+    if not qualified:
+        return []
+    best = max(qualified, key=lambda kv: kv[1])
     a, b = best[0]
     return sorted([a, b])

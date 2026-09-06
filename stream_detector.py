@@ -7,6 +7,7 @@ import numpy as np
 import calibrator
 import gens_counter
 import hook_counter
+import hook_persist
 import hud_anchor
 import hud_regions
 import make_report
@@ -60,7 +61,7 @@ class StreamingDetector:
 
     def __init__(self, bvid, report_root=None, frames_root=None, cfg_path=CFG,
                  hook_names=None, budget=12, wait_window=6, wait_min_frames=3,
-                 wait_min_scale=0.9, slot_win=40, slot_retry=6):
+                 wait_min_scale=0.9, slot_win=40, slot_retry=6, hook_floor_k=4):
         self.bvid = bvid
         self.report_root = report_root or os.path.join(REPORT, bvid)
         self.frames_root = frames_root or PICTURE
@@ -73,6 +74,7 @@ class StreamingDetector:
         self.wait_min_scale = wait_min_scale
         self.slot_win = slot_win
         self.slot_retry = slot_retry
+        self.hook_floor_k = hook_floor_k
         self.state = "WAIT_ANCHOR"
         self.match_no = 0
         self._anchor = None
@@ -86,6 +88,7 @@ class StreamingDetector:
         self._gen = cv2.imread(os.path.join(BASE, "picture", "gen.jpg"))
         self._gens_tracker = gens_counter.GensTracker(self._digits, gen=self._gen)
         self._prev_g = None
+        self._hook_persist = hook_persist.HookPersist(k=self.hook_floor_k)
         self._frame_dir = None
         self._calib = []
         self._wait_cands = []
@@ -140,6 +143,7 @@ class StreamingDetector:
             self.state = "CALIBRATE"
             self._calib = [(fname, frame.copy())]
             self._anchor = anchor
+            self._hook_persist.reset()
             self._reset_slot_calib()
             return None
 
@@ -225,7 +229,8 @@ class StreamingDetector:
             b = resolved[f"survivor_p{i}"]
             crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
             states.append(make_report.classify(crop, i - 1, self._refs, self._icon_tpl))
-        hooks = hook_counter.count_all(frame, resolved, self._slots)
+        raw_hooks = hook_counter.count_all(frame, resolved, self._slots)
+        hooks = self._hook_persist.update(raw_hooks, hud_ok=cur is not None)
         gens = self._gens_tracker.update(frame, resolved, anchor)
 
         # 换局: gens 从非 5 跳回 5
@@ -239,6 +244,7 @@ class StreamingDetector:
             self._calib = [(fname, frame.copy())]
             self._prev_g = None
             self._gens_tracker.reset()
+            self._hook_persist.reset()
             self.state = "CALIBRATE"
             self._reset_slot_calib()
             return {"match_end": self.match_no - 1,

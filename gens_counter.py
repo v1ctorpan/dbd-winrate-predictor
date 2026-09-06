@@ -17,6 +17,10 @@ DIGIT_X = 29
 # 跨视频实测: 有 gen 图标帧 NCC≥0.66 (BV1pht96fEjN 最低 0.66), "全修完/大门"帧 NCC≤0.28。
 # 旧值 0.70 会让 NCC≈0.66~0.69 的真实图标误入"消失→0"分支。
 GEN_ICON_THR = 0.55
+# 图标 NCC 低于此值才算"图标消失→0"(全修完/大门)。跨视频实测真0帧≤0.28；
+# 而 5→4 等数字完成瞬间的 HUD 渲染扰动帧可达 0.47（如 BV1pht96fEjN 04_20.0）。
+# [0.45, 0.55) 视为"图标仍在但被扰动"，照常走数字识别，绝不判 0。
+LOW_ICON_THR = 0.45
 DIGIT_THR = 0.55
 LOW_THR = 0.45
 TRACK_NCC = 0.85
@@ -133,19 +137,22 @@ class GensTracker:
     利用 gens 数字的时序特性提升鲁棒性：
     1. 帧间数字框 NCC 高 -> 沿用前一帧结果（免模板匹配）
     2. 模板重识别
-    3. 递减约束：识别结果大于前一帧时沿用前一帧（gens 只减不增）
+    3. 递减约束：识别结果大于前一帧真实数字(1-5)时沿用前一帧（gens 只减不增）
+    4. 图标 NCC < LOW_ICON_THR 才判 0；[LOW_ICON_THR, 0.55) 为 HUD 扰动帧，
+       走数字识别并沿用前值，防止数字完成瞬间的伪 0 锁死后续识别
 
     状态（prev_digit / prev_crop）跨帧保留，换局时调用 reset()。
     """
 
-    def __init__(self, refs, gen=None, icon_thr=GEN_ICON_THR,
-                 digit_thr=DIGIT_THR, track_ncc=TRACK_NCC, low_thr=LOW_THR):
+    def __init__(self, refs, gen=None, digit_thr=DIGIT_THR,
+                 track_ncc=TRACK_NCC, low_thr=LOW_THR,
+                 low_icon_thr=LOW_ICON_THR):
         self.refs = refs
         self.gen = gen if gen is not None else cv2.imread(GEN_TPL)
-        self.icon_thr = icon_thr
         self.digit_thr = digit_thr
         self.track_ncc = track_ncc
         self.low_thr = low_thr
+        self.low_icon_thr = low_icon_thr
         self.prev_digit = None
         self.prev_crop = None
 
@@ -167,56 +174,61 @@ class GensTracker:
         if anchor is None:
             anchor = {"scale": 1.0}
 
-        if _match_gen_icon(crop, self.gen, anchor) >= self.icon_thr:
-            digit_w = int(DIGIT_X * anchor["scale"])
-            digit_crop = crop[:, 0:digit_w]
+        # 图标 NCC < LOW_ICON_THR 才算"图标消失→0"（全修完/大门，实测≤0.28）。
+        # 介于 [LOW_ICON_THR, 0.55) 的帧（数字完成瞬间的 HUD 扰动，如 04_20.0
+        # icon=0.472）仍走数字识别，绝不判 0。
+        if _match_gen_icon(crop, self.gen, anchor) < self.low_icon_thr:
+            self.prev_digit = 0
+            self.prev_crop = None
+            return 0
 
-            # 1) 帧间沿用：与前一帧数字框高度相似则沿用结果
-            if (self.prev_crop is not None and self.prev_digit is not None):
-                sim = _ncc(digit_crop, self.prev_crop)
-                if sim >= self.track_ncc:
-                    self.prev_crop = digit_crop
-                    return self.prev_digit
+        digit_w = int(DIGIT_X * anchor["scale"])
+        digit_crop = crop[:, 0:digit_w]
 
-            # 2) 模板重识别
-            dh, dw = digit_crop.shape[:2]
-            best, best_score = None, -1.0
-            for digit, imgs in self.refs.items():
-                for ref in imgs:
-                    r = ref
-                    if r.shape[:2] != (dh, dw):
-                        r = cv2.resize(r, (dw, dh), interpolation=cv2.INTER_AREA)
-                    s = _ncc(digit_crop, r)
-                    if s > best_score:
-                        best_score, best = s, digit
-
-            if best is not None and best_score >= self.digit_thr:
-                # 3) 递减约束：gens 只减不增，识别结果大于前帧则沿用前帧
-                if self.prev_digit is not None and best > self.prev_digit:
-                    self.prev_crop = digit_crop
-                    return self.prev_digit
-                self.prev_digit = best
-                self.prev_crop = digit_crop
-                return best
-
-            # 4) 模板分数不足：best 仍明确(>=LOW_THR)且符合递减则采纳；
-            #    否则若前一帧有效则沿用（防御渲染噪声）
-            if (best is not None and best_score >= self.low_thr
-                    and (self.prev_digit is None or best <= self.prev_digit)):
-                self.prev_digit = best
-                self.prev_crop = digit_crop
-                return best
-            if self.prev_digit is not None and self.prev_digit in (1, 2, 3, 4, 5):
+        # 1) 帧间沿用：与前一帧数字框高度相似则沿用结果
+        if (self.prev_crop is not None and self.prev_digit is not None):
+            sim = _ncc(digit_crop, self.prev_crop)
+            if sim >= self.track_ncc:
                 self.prev_crop = digit_crop
                 return self.prev_digit
-            self.prev_digit = None
-            self.prev_crop = None
-            return None
 
-        # 图标消失 -> 0（所有发电机修完）
-        self.prev_digit = 0
+        # 2) 模板重识别
+        dh, dw = digit_crop.shape[:2]
+        best, best_score = None, -1.0
+        for digit, imgs in self.refs.items():
+            for ref in imgs:
+                r = ref
+                if r.shape[:2] != (dh, dw):
+                    r = cv2.resize(r, (dw, dh), interpolation=cv2.INTER_AREA)
+                s = _ncc(digit_crop, r)
+                if s > best_score:
+                    best_score, best = s, digit
+
+        if best is not None and best_score >= self.digit_thr:
+            # 3) 递减约束：gens 只减不增。仅当 prev 是真实数字(1-5)时，
+            #    识别结果大于前帧则沿用前帧；prev=0 不设地板（真正的 0 状态
+            #    图标已消失、不会走到本分支，故 prev=0 只可能来自误判，
+            #    允许置信识别恢复为数字）。
+            if self.prev_digit in (1, 2, 3, 4, 5) and best > self.prev_digit:
+                self.prev_crop = digit_crop
+                return self.prev_digit
+            self.prev_digit = best
+            self.prev_crop = digit_crop
+            return best
+
+        # 4) 模板分数不足：best 仍明确(>=LOW_THR)且符合递减则采纳；
+        #    否则若前一帧有效则沿用（防御渲染噪声）
+        if (best is not None and best_score >= self.low_thr
+                and (self.prev_digit not in (1, 2, 3, 4, 5) or best <= self.prev_digit)):
+            self.prev_digit = best
+            self.prev_crop = digit_crop
+            return best
+        if self.prev_digit is not None and self.prev_digit in (1, 2, 3, 4, 5):
+            self.prev_crop = digit_crop
+            return self.prev_digit
+        self.prev_digit = None
         self.prev_crop = None
-        return 0
+        return None
 
 def main():
     cfg = hud_regions.load_regions(CFG)

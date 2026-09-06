@@ -133,6 +133,29 @@ class TestGensTracker(unittest.TestCase):
             got = tracker.update(crop, resolved, anchor)
             self.assertEqual(got, 5, f"{fn}: {got} != 5")
 
+    def test_transient_icon_dip_does_not_lock_zero(self):
+        """BV1pht96fEjN 04_20.0~04_29.5 (260~269.5s) 真值全 4。
+        frame_04_20.0 是 5→4 完成瞬间，HUD 渲染扰动使 icon NCC=0.472、digit 4
+        NCC=0.438 双双跌破阈值，曾被误判为 0；随后 prev=0 触发"只减不增"守卫，
+        把 04_20.5 起所有置信识别的 4 永久锁死（整段 CSV 变 0）。
+        回归：伪 0 不得锁死后续识别；过渡帧本身也不得判 0。"""
+        base = os.path.join(BASE, "picture", "BV1pht96fEjN")
+        anchor = {"x": 142, "y": 806, "w": 52, "h": 48, "scale": 1.5}
+        z = cv2.imread(os.path.join(base, "gens_0420_zero.png"))
+        f = cv2.imread(os.path.join(base, "gens_0420_four.png"))
+        self.assertIsNotNone(z, "gens_0420_zero.png")
+        self.assertIsNotNone(f, "gens_0420_four.png")
+        h, w = z.shape[:2]
+        resolved = {"gens_row": {"x0": 0, "y0": 0, "x1": w, "y1": h}}
+        tracker = gens_counter.GensTracker(self.refs, gen=self.gen)
+        first = tracker.update(z, resolved, anchor)
+        self.assertNotEqual(first, 0,
+                            f"过渡帧 icon NCC=0.472（真0帧≤0.28）不应判全部修完: {first}")
+        second = tracker.update(f, resolved, anchor)
+        self.assertEqual(second, 4, f"伪 0 锁死后续置信识别: first={first} second={second}")
+        third = tracker.update(f, resolved, anchor)
+        self.assertEqual(third, 4, f"不应回退: third={third}")
+
     def test_reset_clears_state(self):
         ga = {"x": 121, "y": 847, "w": 45, "h": 41, "scale": 1.3}
         tracker = gens_counter.GensTracker(self.refs, gen=self.gen)

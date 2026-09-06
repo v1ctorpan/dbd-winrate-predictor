@@ -1,11 +1,11 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
-> 最后更新：2026-09-04
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**；**多线程数据产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送（46 测试 PASS）**；Task5「BV1pht96fEjN 真实视频端到端」排查中：gens 阈值误判与 hooks 槽位/overlay 误检已修（46 测试全绿），详见 §3.8~3.10 与 §6。
+> 最后更新：2026-09-06
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**；**多线程数据产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送（46 测试 PASS）**；Task5「BV1pht96fEjN 真实视频端到端」排查修复已完成并随本批提交（51 测试 PASS）：gens 阈值(§3.8-A)、hooks 滚动校准(§3.8-B)、count_hooks 防 overlay(§3.9)、hook 持久化地板+HUD 复用(§3.12)、滚动校准跨帧支持度防误锁(§3.12)、gens 260~269s 误读 0(§3.11)。剩余：executed≈dead 状态补充与全片端到端验证（见 §6）。
 
 ## 分支与提交状态（2026-09-04）
 
-- `main`（当前分支）：Task1-4（`80bdf87` 半秒帧命名/parse_time → `f3de624` 流式检测器 → `8f6f730` dataset_encoder append/read → `83deb92` 三线程 run_pipeline）已推送 origin/main；`data_pipeline` 分支（含 `3c55d96` WAIT 稳定性修复）已合并回 main。Task5 排查修复待提交（gens 阈值 / hooks 滚动校准 / hooks 防 overlay），提交后全量 46 测试 PASS。
+- `main`（当前分支）：Task1-4（`80bdf87` 半秒帧命名/parse_time → `f3de624` 流式检测器 → `8f6f730` dataset_encoder append/read → `83deb92` 三线程 run_pipeline）已推送 origin/main；`data_pipeline` 分支（含 `3c55d96` WAIT 稳定性修复）已合并回 main。Task5 排查修复（gens 阈值 0.55 / hooks 滚动校准 / count_hooks 防 overlay / HookPersist 持久化地板 / 槽位跨帧支持度防误锁 / gens 260~269s 误读 0）随本次提交推送，提交后全量 51 测试 PASS（见 §3.8~3.12）。
 - `data_pipeline`：已合入 main，无待合回改动。origin/data_pipeline 保留。
 - 产物：BV1pht96fEjN.mp4（1080p，14.3 分钟，435 MB）已下载到 `picture/raw_videos/`（gitignore）；锚点经探查 + 用户目视确认 = `(142,806) scale=1.5`（与 BV1 的 (121,847)@1.3 不同，hook_regions.json 仅 key 到 BV1Uu8z6eEVM，不会误用）。
 - **整体待办见 §6**。
@@ -209,7 +209,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - `frame_04_20.0~04_29.5`：画面正常，**gens 实为 4**（CSV 曾 0/None/4 → 该段 0 为误读）
 - `frame_00_55.5`、`frame_02_10`：**HUD 真实短暂消失**（gens=None 正确）→ 后续宜复用前一帧状态，但须确认是真消失而非误检
 
-**残留待办**：① dying/executed 段的 hook 竖线误检（dying 状态指示 UI 与钩子线混淆）；② 260~269s gens 误读 0（图标判读边界）；③ HUD 短暂消失时"复用前状态"实现 + executed≈dead 状态补充。
+**残留待办**：① dying/executed 段的 hook 竖线误检（dying 状态指示 UI 与钩子线混淆）；② ~~260~269s gens 误读 0（图标判读边界）~~ ✅ 已修（§3.11）；③ HUD 短暂消失时"复用前状态"实现 + executed≈dead 状态补充。
 
 ### 3.9 残留 A 排查进展：hook 误检 = overlay 亮带/闪现（2026-09-04，部分已修）
 
@@ -231,7 +231,38 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - **任务产物不入库**：`picture/BV1pht96fEjN/match_1/`（549 帧样本，含 `_diagA/` 标注图）与 `report/BV1pht96fEjN/`（嵌套 CSV）为调试输出，**不要 git add**；仅两个 fixture `picture/BV1pht96fEjN/gens_borderline_{a,b}.png` 需入库（回归测试引用）。
 - **关键域知识**：BV1pht96fEjN 里屠夫**从不挂人（Mori 处决）** → 全片 hooks 真值 0，不能用来标定钩子槽位；"executed(处决)" 未编码，语义 ≈ sacrificed ≈ dead；dying(倒地) 的出血/UI 会盖过 pip 区产生类钩线。
 - **测试运行**：`& "C:\Users\Sallia\.conda\envs\dbd\python.exe" -m unittest discover -s tests`（当前 46 PASS）。
-- **遗留未决点（接手重点）**：① 持久化地板以消残余单簇误检 + HUD 消失复用；② 滚动校准防误锁槽位；③ gens 260~269s 误读 0（真值 4）复核；④ executed≈dead 状态补充；⑤ 全片端到端(14.3min, ~55min)与数据校验。
+- **遗留未决点（接手重点）**：① ~~持久化地板以消残余单簇误检 + HUD 消失复用~~ ✅ 已修（§3.12）；② ~~滚动校准防误锁槽位~~ ✅ 已修（§3.12）；③ ~~gens 260~269s 误读 0（真值 4）复核~~ ✅ 已修（§3.11）；④ executed≈dead 状态补充；⑤ 全片端到端(14.3min, ~55min)与数据校验。
+
+### 3.11 gens 260~269s 误读 0 根因与修复（2026-09-06，已修）
+
+**现象**：BV1pht96fEjN `frame_04_20.0~04_29.5`（260~269.5s）真值全 4，CSV 曾全 0。
+
+**根因（两项叠加）**：
+1. **单帧伪 0**：`frame_04_20.0`（260.0s）恰是 5→4 完成瞬间，HUD 渲染白光扰动使 gen 图标 NCC=0.472 < `GEN_ICON_THR`(0.55)、digit 4 也跌到 0.438 < `LOW_THR`(0.45)。该帧被误入"图标消失→0"分支。
+2. **prev=0 单调锁死**：`GensTracker`"只减不增"守卫（`best > prev_digit → 沿用 prev`）把 0 当永久地板——04_20.5 起每帧正确识别的 4（icon 0.757 / digit 0.783）都被压回 0，直到 04_29.0 出现 None 重置才恢复 → 整段 10s 全 0。
+
+**修复（`gens_counter.py`）**：
+- 新增 `LOW_ICON_THR=0.45`：图标 NCC **<0.45 才算"消失→0"**（跨视频实测真 0 帧≤0.28，判隔充足）；`[0.45,0.55)` 视为"HUD 扰动但图标仍在"，照常走数字识别/沿用前值，绝不判 0。
+- 递减守卫仅当 `prev_digit ∈ (1..5)` 时拦截；**prev=0 不设地板**（真 0 状态图标已消失不会走到数字分支，prev=0 只可能来自误判，允许置信识别恢复）。
+- 移除不再使用的 `icon_thr` 构造参数。
+
+**验证（TDD，先 RED 后 GREEN）**：
+- 新增回归测试 `test_transient_icon_dip_does_not_lock_zero`（用本视频保存的 fixture `picture/BV1pht96fEjN/gens_0420_zero.png`(04_20.0 区域) + `gens_0420_four.png`(04_20.5 区域)）：RED 时 second=0（锁死复现）→ GREEN 后 first≠0、second/third=4。
+- 全量 51 测试 PASS（46 + 5 新增累积；含 test1/BV1/BV16 真值回归不受影响）。
+- 固定锚点(142,806,scale1.5) 顺序回放真实帧：`04_15.0~04_19.5`=5 → `04_20.0`=5（5→4 完成瞬间白光帧，沿用前值，用户认可）→ `04_20.5~04_29.5` **全 4** → 之后持续 4。
+- 遗留：`count_gens`（无状态，`make_report.py`/`detect_report.py` 遗留路径）仍用 `>=GEN_ICON_THR` 判图标，未同步改动；新产线 CSV 走 `GensTracker`，不受影响。
+
+### 3.12 hooks 持久化地板 + 滚动校准跨帧支持度防误锁（2026-09-06，已修）
+
+承接 §3.9 残留：孤立单簇闪现(2)型误检与开局 overlay 被锁成槽位。
+
+**hook 持久化地板（新文件 `hook_persist.py`，`HookPersist`）**：raw hook 计数一次抬升必须连续 ≥k(默认 4) 帧都观测到才采纳，消除开局/转场的孤立单簇闪现（BV1pht hooks 恒 0 场景）；`hud_ok=False`（HUD 短暂消失/结算转场）帧不更新输出，复用前一稳定值。抬升与回落都需 k 帧确认（`test_release_needs_sustained_zero`）。`stream_detector._record` 接入：`raw_hooks = hook_counter.count_all(...)` → `hooks = self._hook_persist.update(raw_hooks, hud_ok=cur is not None)`；开局锚定与换局时 `reset()`。回归测试 `tests/test_hook_persist.py`（6 项）。
+
+**滚动校准防误锁（`calibrator.calibrate_hook_slots` 加 `min_frames`）**：候选 (a,b) 槽位对必须出现在 **≥min_frames(默认 2) 个不同帧**才被采纳——旧逻辑只看累计共现次数，1~2 帧的 overlay 宽亮带一旦构成 best 对就会被误锁成槽位。改为按不同帧计数过滤后再取 best。回归测试 `tests/test_calibrator.py` `TestCalibrateSlotsSupport`（3 项：单帧/两帧 overlay 闪现不锁、真实双槽持续多帧照常锁）。
+
+> 注：`tests/test_calibrator.py` 原 `TestConsensusAnchor`/`TestCalibrateVideo`（针对 `calibrator.consensus_anchor`/`calibrate_video`）随本次改写被移除——这两函数已被 `hud_anchor.detect_anchor` 取代（产线不再调用，属孤儿函数），暂保留未删。
+
+**验证**：TDD 先 RED 后 GREEN；全量 51 测试 PASS。BV1pht 端到端 hooks 恒 0 的最终验证仍待 §6.8 全片回放。
 
 ## 4. 测试数据与真值
 
@@ -285,13 +316,13 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ## 6. 待办（下一步）
 
-**main（当前分支，Task1-4 + WAIT 修复已推送；Task5 排查修复待提交，见 §3.8~3.10）**：
+**main（当前分支，Task1-4 + WAIT 修复已推送；Task5 排查修复随本次提交，见 §3.8~3.12）**：
 1. ✅（已修）gens 阈值误判 `GEN_ICON_THR 0.70→0.55`（跨视频判隔证据见 3.8-A）+ 回归测试。
 2. ✅（已修）hooks 开局空槽位 → 前向滚动重校准（3.8-B）+ 回归测试。
 3. ✅（已修）hooks overlay 误检 → `count_hooks` 防"连通亮带贯穿两槽"（3.9）+ `TestCountHooksAntiBlob`。
-4. ⏳ 持久化地板：真钩持续 ≥K 帧才抬升输出（消残余单簇闪现误检；顺带 HUD 消失时复用前值）。完成后再端到端验证 BV1pht hooks 恒 0。
-5. ⏳ 滚动校准防误锁：开局 overlay 闪现可能被锁成槽位，需加支持度/确认门限。
-6. ⏳ gens 260~269s 误读 0（用户真值 =4，画面正常）复核。
+4. ✅（已修）持久化地板 `HookPersist`：真钩持续 ≥k 帧才抬升输出 + HUD 消失复用前值（3.12）；待 §6.8 全片端到端验证 BV1pht hooks 恒 0。
+5. ✅（已修）滚动校准防误锁：`calibrate_hook_slots` 加跨帧支持度 `min_frames`，overlay 闪现（1~2 帧）不再被锁成槽位（3.12）。
+6. ✅（已修）gens 260~269s 误读 0（用户真值 =4，画面正常）→ 根因：单帧伪 0 + prev=0 单调锁死；`LOW_ICON_THR=0.45` + 递减守卫仅限 1..5。回归测试 + 全量 51 PASS，见 §3.11。
 7. ⏳ 状态补充：executed≈dead（Mori 处决画面/结算）。
 8. ⏳ 上述收敛后：BV1pht96fEjN 全片（14.3min）端到端 `run_pipeline.py`（~55min）→ match_N/CSV + `dataset/videos.jsonl` 的 `BV1pht96fEjN:N` 记录；校验数据行（features 长度、id、label=-1）；更新 `docs/dataset_format.md`。
 

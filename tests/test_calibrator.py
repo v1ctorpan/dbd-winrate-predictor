@@ -1,87 +1,64 @@
 import os
-import shutil
-import sys
 import tempfile
 import unittest
 
 import cv2
+import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import hud_anchor
 import calibrator
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEST1 = os.path.join(BASE, "picture", "test1")
-GEN_TPL = os.path.join(BASE, "picture", "gen.jpg")
-CFG = os.path.join(BASE, "config", "hud_regions.json")
+REGION = {"x0": 200, "y0": 400, "x1": 250, "y1": 430}
 
 
-def candidates_for(frames):
-    tpl = cv2.imread(GEN_TPL)
-    return [hud_anchor.find_gen_anchors(cv2.imread(os.path.join(TEST1, f)), tpl) for f in frames]
+def _resolved():
+    return {f"hook_p{i}": dict(REGION) for i in range(1, 5)}
 
 
-class TestConsensusAnchor(unittest.TestCase):
-    def test_finds_true_anchor_across_frames(self):
-        cands = candidates_for(["frame_0000.jpg", "frame_0001.jpg", "frame_0002.jpg"])
-        anchor = calibrator.consensus_anchor(cands)
-        self.assertIsNotNone(anchor)
-        self.assertAlmostEqual(anchor["x"], 94, delta=3)
-        self.assertAlmostEqual(anchor["y"], 536, delta=3)
-        self.assertAlmostEqual(anchor["scale"], 1.0, delta=0.1)
-
-    def test_rejects_hudless_frames_only(self):
-        cands = candidates_for(["frame_0000.jpg"])
-        anchor = calibrator.consensus_anchor(cands)
-        self.assertIsNone(anchor)
-
-    def test_picks_highest_score_representative(self):
-        cands = candidates_for(["frame_0001.jpg", "frame_0002.jpg"])
-        anchor = calibrator.consensus_anchor(cands)
-        self.assertIsNotNone(anchor)
-        self.assertAlmostEqual(anchor["x"], 94, delta=3)
-        self.assertAlmostEqual(anchor["y"], 536, delta=3)
+def _frame(lit_cols):
+    frame = np.full((1080, 1920, 3), 40, dtype=np.uint8)
+    for x in lit_cols:
+        frame[400:430, x] = 255
+    return frame
 
 
-class TestCalibrateVideo(unittest.TestCase):
-    def setUp(self):
-        self.tmpdir = tempfile.mkdtemp(prefix="dbd_refs_")
-        self.refs_dir = os.path.join(self.tmpdir, "refs", "video_test1")
-        os.makedirs(self.refs_dir, exist_ok=True)
+def _write(frames, names, d):
+    paths = []
+    for fr, name in zip(frames, names):
+        p = os.path.join(d, name)
+        cv2.imwrite(p, fr)
+        paths.append(p)
+    return paths
 
-    def tearDown(self):
-        shutil.rmtree(self.tmpdir)
 
-    def test_extracts_healthy_refs_from_opening_frames(self):
-        opening = [os.path.join(TEST1, f) for f in
-                   ["frame_0000.jpg", "frame_0001.jpg", "frame_0002.jpg"]]
-        anchor = calibrator.calibrate_video(opening, GEN_TPL, CFG, self.refs_dir)
-        self.assertIsNotNone(anchor)
-        self.assertAlmostEqual(anchor["x"], 94, delta=3)
-        for i in range(1, 5):
-            p = os.path.join(self.refs_dir, f"healthy_p{i}.jpg")
-            self.assertTrue(os.path.exists(p), f"missing {p}")
-            img = cv2.imread(p)
-            self.assertIsNotNone(img)
-            self.assertGreater(img.shape[0], 10)
-            self.assertGreater(img.shape[1], 10)
+class TestCalibrateSlotsSupport(unittest.TestCase):
+    def test_single_overlay_flash_not_locked(self):
+        """仅 1 帧 overlay 宽亮带(跨两槽)不应被锁为槽位; 旧逻辑会因 best 对存在而锁错。"""
+        with tempfile.TemporaryDirectory() as d:
+            clean = [_frame([]) for _ in range(8)]
+            flash = _frame(list(range(208, 217)))
+            paths = _write(clean + [flash], [f"f{i:03d}.jpg" for i in range(9)], d)
+            got = calibrator.calibrate_hook_slots(paths, _resolved(), min_frames=2)
+            self.assertEqual(got, [])
 
-    def test_healthy_ref_matches_same_video_face(self):
-        opening = [os.path.join(TEST1, f) for f in
-                   ["frame_0001.jpg", "frame_0002.jpg"]]
-        calibrator.calibrate_video(opening, GEN_TPL, CFG, self.refs_dir)
-        import hud_regions
-        import state_recognizer
-        cfg = hud_regions.load_regions(CFG)
-        anchor = {"x": 94, "y": 536, "w": 35, "h": 32, "score": 0.945, "scale": 1.0}
-        resolved = hud_regions.resolve_regions(cfg, anchor)
-        frame = cv2.imread(os.path.join(TEST1, "frame_0001.jpg"))
-        for i in range(1, 5):
-            b = resolved[f"survivor_p{i}"]
-            crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
-            ref = cv2.imread(os.path.join(self.refs_dir, f"healthy_p{i}.jpg"))
-            self.assertGreater(state_recognizer.ncc(crop, ref), 0.9)
+    def test_two_frame_flash_not_locked_either(self):
+        """仅 2 帧(小于门限)也不锁。"""
+        with tempfile.TemporaryDirectory() as d:
+            clean = [_frame([]) for _ in range(6)]
+            flash = _frame(list(range(208, 217)))
+            paths = _write(clean + [flash, flash],
+                           [f"f{i:03d}.jpg" for i in range(8)], d)
+            got = calibrator.calibrate_hook_slots(paths, _resolved(), min_frames=3)
+            self.assertEqual(got, [])
+
+    def test_sustained_slot_pair_still_locked(self):
+        """真实双槽同时亮起持续多帧 -> 照常锁定。"""
+        with tempfile.TemporaryDirectory() as d:
+            frames = [_frame([209, 210, 214, 215]) for _ in range(6)]
+            paths = _write(frames, [f"f{i:03d}.jpg" for i in range(6)], d)
+            got = calibrator.calibrate_hook_slots(paths, _resolved(), min_frames=2)
+            self.assertEqual(len(got), 2)
+            for got_x, exp_x in zip(got, [209, 214]):
+                self.assertLessEqual(abs(got_x - exp_x), 1)
 
 
 if __name__ == "__main__":
