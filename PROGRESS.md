@@ -10,6 +10,10 @@
 - 产物：BV1pht96fEjN.mp4（1080p，14.3 分钟，435 MB）已下载到 `picture/raw_videos/`（gitignore）；锚点经探查 + 用户目视确认 = `(142,806) scale=1.5`（与 BV1 的 (121,847)@1.3 不同，hook_regions.json 仅 key 到 BV1Uu8z6eEVM，不会误用）。
 - **整体待办见 §6**。
 
+## 0. 基础要求
+- 请使用中文进行对话，在compaction中要显式提到这一点
+- 耗时较长的操作提前告知用户并确认，尽量采用subagent后台运行
+
 ## 1. 项目目标
 
 - 输入：一局 DBD 的录播视频
@@ -274,6 +278,36 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 **验证**：全量 52 测试 PASS（新增 1 项）。
 
+### 3.14 换局误切修复 + 10s 预扫优化流程（2026-09-06）
+
+**背景**：BV1aatX6uE3C（真值=单局至 ~6:45/~405.5s）在旧换局判定下被切成 4 段——旧逻辑 `_prev_g` 只在「gens==5 且上一帧是孤立 0」计数，误把 26.5/58.5/175.5s 的三处单帧 0 后接 5 判成换局。逐帧排查另确认：真实换局 BV1Uu frame_10_40 前有连续 0 段；BV1aat ~290s 处有 8 帧连续 None/0 死段（04_45.5~04_49.5）→ 修好单帧后仍会在 ~290s 再切一次（残留，见下文处理）。据此用户定方向：**不做全量全片重跑，改为实现“10s 预扫优化流程”**。
+
+**修复（`stream_detector.py`，换局判定收严）**：`_prev_g` 改 `_dead_run`，加 `MIN_END_ZERO_RUN=2`——0/None 帧累计、其他值清零、仅当「识别值==5 且连续死段 ≥2」才切局；孤立单帧 0 不再切。新增回归 `TestMatchEndRegression` 2 项（孤立单帧 0 不切 / 连续 0 段仍切，全过）。
+
+**预扫设计（`prescan.py`，新文件）**：对任一新视频先按 10s 间隔抽样，
+- **确认 HUD 位置**：逐样本全帧 `find_gen_anchors` → 跨样本位置/尺度聚类取最大簇为共识锚点 `anchor`，簇占比 `anchor_ratio`；
+- **判多局**（用户定的双条件，须同帧满足）：A) gens 异常跳变——识别值高于此前递减基线（或同值但中间隔着 ≥2 个不可读样本 / 识别到 0）；B) 4 个幸存者头像与前序含头像样本的 **NCC 均值 < 0.8** 判为“明显区别”。A∩B 才切局，只满足一个不切。
+- 实现分层：纯决策 `find_boundaries`（可单测）+ 抽样层（stateless `count_gens` 而非 GensTracker——后者单调地板会掩盖跳变；4 头像裁剪灰度 std 校验 + NCC 均值）→ `PrescanResult`。
+
+**调试要点（BV1Uu 实测从 3 个假界收敛到 1 个真界）**：首版把「同值 + 单样本 None 断档」也当候选，配合局内头像 NCC 偶发跌到 0.69~0.75（同批幸存者的状态/UI 变化噪声）产生 2 个假界 → 收严为**断档需 ≥2 样本或识别到 0**（`test_momentary_gap_same_gens_not_boundary` / `test_sustained_gap_same_gens_is_boundary` 固化）。真界 frame_10_40 前是 7 样本持续 None，跨头像 NCC≈−0.03，与局内噪声明显分离。
+
+**真实帧集成**（`tests/test_prescan.py`，共 11 项 PASS）：BV1Uu8z6eEVM 目录（110 帧@10s）→ 锚点 (120,847) ratio 0.91、恰 1 个边界在 640s(frame_10_40)；BV16QtT6ZEPq（单局）→ 0 边界。
+
+**检测器/产线打通**：
+- `StreamingDetector` 新参数：`anchor_prior`（预扫锚点，跳过 WAIT 直入 CALIBRATE）、`detect_match_end`（默认 True；预扫判单局时置 False 以彻底避免假切，BV1aat 残留 ~290s 假界即由此压掉）、`force_new_match`（RECORD 态强制开新局，供预扫边界使用；抽取 `_start_new_match` 复用换局分支）。新测试 `TestAnchorPrior` 3 项 + `TestPrescanDrivenEnd` 2 项（全过）。
+- `run_pipeline.py` 新增 `run_video_prescan`：预扫 → `plan_prescan`（anchor_ok / single / boundaries / segments）→ 落盘 `report/{bvid}/prescan.json` 预检报告 → 带 `anchor_prior` 全量跑；单局 `detect_match_end=False`，多局在预扫边界处 `force_new_match`（段内 RECORD 0/None 换局仍兜底，多出段照常写回）；锚点不可信时回退旧 WAIT 产线 `run_video`。CLI 加 `--prescan` / `--prescan-interval`。新测试 `tests/test_pipeline_prescan.py` 8 项 PASS（plan/报告/锚点回退/强制切段均 mock 验证）。
+
+**验证**：`tests/test_prescan.py` 11 PASS、`tests/test_pipeline_prescan.py` 8 PASS、`test_stream_detector.py` 相关新类 PASS；此前最后一次全量 = 71 passed + 114 subtests（含 prescan 真帧集成、早于 anchor_prior/detect_match_end/force/产线新增）。**本次按用户要求未重跑全量**（见注意事项）。
+
+**注意事项 / 需要留意的点**：
+1. ⚠️ **全量回归未跑**（用户要求先推）——新增 `TestAnchorPrior`/`TestPrescanDrivenEnd`/`test_pipeline_prescan` 均为定向跑绿，接续前请先 `python -m pytest tests/` 全量确认。
+2. BV1aat 单局 dataset 合并（4 行 → 1 行，截 ~405.5s，label=-1）仍挂起，待用户确认后再做；勿全量重跑 BV1aat。
+3. prescan 阈值现为硬编码常量（`PORTRAIT_NCC_THR 0.8`=用户定、`PORTRAIT_MIN_STD 8`、`MIN_ANCHOR_SCALE 0.9`、portrait 有效对 ≥2、`ANCHOR_MIN_RATIO 0.5`），样本多了再调。
+4. 同值+单样本断档不再视为候选 → 极少见「5→5 且两局间仅 1 不可读帧」会被预扫漏切，交给段内 RECORD 兜底。
+5. `asset/icon_executed.png`（2026-09-06 生成，代码中无引用）未加入提交，如需 executed 状态（§6 待办 7）再纳入。
+6. §3.13 所述 `run_video` 返回 `closed=[]` 的统计口径缺陷仍在（本提交未改）；`run_video_prescan` 按 `_encode_match` 返回值累计，其 records 数可靠。
+7. 旧 `run_video`/`run_frames_dir` 路径与默认参数行为完全不变，既有测试不受影响（设计如此，留给全量回归确认）。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）
@@ -327,6 +361,12 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 ## 6. 待办（下一步）
 
 **main（当前分支，Task1-4 + WAIT 修复已推送；Task5 排查修复随本次提交，见 §3.8~3.12）**：
+
+**2026-09-06（本提交，已推送）**：
+- ✅ 换局误切修复：孤立单帧 0 不再切局（`MIN_END_ZERO_RUN=2`，§3.14）+ 回归。
+- ✅ 10s 预扫优化流程全链路（`prescan.py` + `StreamingDetector` anchor_prior/detect_match_end/force_new_match + `run_pipeline.run_video_prescan` + `--prescan`，§3.14）：抽样确认 HUD 锚点 & 双条件（gens 异常跳变 ∩ 4 头像 NCC<0.8）判多局；单局关自动切、多局按预扫边界强切、锚点不可信回退旧产线。定向测试全绿；全量回归待跑。
+- ⏳ BV1aat 单局 dataset 合并（4 行→1 行 ~405.5s，label=-1）挂起待确认；勿全量重跑。
+- ⏳ 全量回归跑一次确认 §3.14 新增不影响旧路径（建议接续第一步做）。
 1. ✅（已修）gens 阈值误判 `GEN_ICON_THR 0.70→0.55`（跨视频判隔证据见 3.8-A）+ 回归测试。
 2. ✅（已修）hooks 开局空槽位 → 前向滚动重校准（3.8-B）+ 回归测试。
 3. ✅（已修）hooks overlay 误检 → `count_hooks` 防"连通亮带贯穿两槽"（3.9）+ `TestCountHooksAntiBlob`。

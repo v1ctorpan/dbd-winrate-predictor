@@ -20,6 +20,11 @@ REPORT = os.path.join(BASE, "report")
 
 HEADER = ["frame", "scale", "p1", "p2", "p3", "p4", "hooks", "gens", "机器标注"]
 
+# 换局判定: 连续 0/None(gens 图标消失/未识别)帧累计达此值后重新出现 5 才切局。
+# BV1aat 误切根因是孤立单帧 0 后紧跟 5(帧间 0.5s, 单帧 0 是图标瞬时误读);
+# 真换局(BV1Uu frame_10_40)前有 09_40 起持续多帧 0, 远大于该阈值。
+MIN_END_ZERO_RUN = 2
+
 
 def _has_hook_line_candidate(frame, resolved):
     """RECORD 帧是否在任一 hook 区域内出现合格竖线（与 calibrate_hook_slots 同判据）。
@@ -52,7 +57,7 @@ class StreamingDetector:
     WAIT_ANCHOR: 无锚点, 每帧尝试 detect_anchor, 命中即落盘开新局进 CALIBRATE
     CALIBRATE:   攒 budget 帧(落盘) -> pick_opening_frame 定 healthy 基线
                  -> calibrate_hook_slots 定槽位 -> 回放进 RECORD
-    RECORD:      逐帧 classify/count_hooks/gens; 检测换局(gens 非5->5)
+    RECORD:      逐帧 classify/count_hooks/gens; 检测换局(连续 0/None 段后回 5)
                  -> 写 CSV(match_end) -> 重新 CALIBRATE 开下一局
 
     落盘规则(全局约束): CALIBRATE/RECORD 进入的帧全部写入
@@ -61,8 +66,11 @@ class StreamingDetector:
 
     def __init__(self, bvid, report_root=None, frames_root=None, cfg_path=CFG,
                  hook_names=None, budget=12, wait_window=6, wait_min_frames=3,
-                 wait_min_scale=0.9, slot_win=40, slot_retry=6, hook_floor_k=4):
+                 wait_min_scale=0.9, slot_win=40, slot_retry=6, hook_floor_k=4,
+                 anchor_prior=None, detect_match_end=True):
         self.bvid = bvid
+        self.anchor_prior = anchor_prior
+        self.detect_match_end = detect_match_end
         self.report_root = report_root or os.path.join(REPORT, bvid)
         self.frames_root = frames_root or PICTURE
         self.cfg = hud_regions.load_regions(cfg_path)
@@ -87,7 +95,7 @@ class StreamingDetector:
         self._digits = gens_counter.load_digit_refs()
         self._gen = cv2.imread(os.path.join(BASE, "picture", "gen.jpg"))
         self._gens_tracker = gens_counter.GensTracker(self._digits, gen=self._gen)
-        self._prev_g = None
+        self._dead_run = 0
         self._hook_persist = hook_persist.HookPersist(k=self.hook_floor_k)
         self._frame_dir = None
         self._calib = []
@@ -132,7 +140,10 @@ class StreamingDetector:
 
     def feed(self, frame, fname):
         if self.state == "WAIT_ANCHOR":
-            anchor = self._wait_anchor(frame)
+            if self.anchor_prior is not None:
+                anchor = self.anchor_prior
+            else:
+                anchor = self._wait_anchor(frame)
             if anchor is None:
                 return None
             self.match_no += 1
@@ -233,23 +244,17 @@ class StreamingDetector:
         hooks = self._hook_persist.update(raw_hooks, hud_ok=cur is not None)
         gens = self._gens_tracker.update(frame, resolved, anchor)
 
-        # 换局: gens 从非 5 跳回 5
-        if (gens == 5 and self._prev_g is not None and self._prev_g not in (5, None)):
-            self._write_match()
-            self.match_no += 1
-            self._frame_dir = os.path.join(self.frames_root, self.bvid,
-                                           f"match_{self.match_no}")
-            os.makedirs(self._frame_dir, exist_ok=True)
-            self._persist(frame, fname)
-            self._calib = [(fname, frame.copy())]
-            self._prev_g = None
-            self._gens_tracker.reset()
-            self._hook_persist.reset()
-            self.state = "CALIBRATE"
-            self._reset_slot_calib()
-            return {"match_end": self.match_no - 1,
-                    "csv": os.path.join(self.report_root, self.bvid,
-                                        f"match_{self.match_no - 1}", "detect_report.csv")}
+        # 换局: 经历连续 0/None 段(gens 图标消失/未识别 >= MIN_END_ZERO_RUN 帧)
+        # 后重新出现 5。孤立单帧 0 是图标瞬时误读, 不切局。
+        if (self.detect_match_end and gens == 5
+                and self._dead_run >= MIN_END_ZERO_RUN):
+            return self._start_new_match(frame, fname)
+
+        # 非换局帧: 0/None 计入连续死段, 其余(1-5)清零
+        if gens in (0, None):
+            self._dead_run += 1
+        else:
+            self._dead_run = 0
 
         # 非换局 RECORD 帧落盘到当前局
         self._persist(frame, fname)
@@ -257,7 +262,6 @@ class StreamingDetector:
         if len(self._slot_win) > self.slot_win:
             self._slot_win.pop(0)
         self._maybe_recalibrate_slots(frame, resolved)
-        self._prev_g = gens
         flags = []
         for i, st in enumerate(states):
             if st == "unknown":
@@ -271,6 +275,30 @@ class StreamingDetector:
         return {"frame": fname, "scale": anchor["scale"], "p1": states[0],
                 "p2": states[1], "p3": states[2], "p4": states[3],
                 "hooks": "/".join(str(h) for h in hooks), "gens": gens, "机器标注": note}
+
+    def _start_new_match(self, frame, fname):
+        """关闭当前局并以其后 frame 为新局 CALIBRATE 起点。返回 match_end 事件。"""
+        self._write_match()
+        self.match_no += 1
+        self._frame_dir = os.path.join(self.frames_root, self.bvid,
+                                       f"match_{self.match_no}")
+        os.makedirs(self._frame_dir, exist_ok=True)
+        self._persist(frame, fname)
+        self._calib = [(fname, frame.copy())]
+        self._dead_run = 0
+        self._gens_tracker.reset()
+        self._hook_persist.reset()
+        self.state = "CALIBRATE"
+        self._reset_slot_calib()
+        return {"match_end": self.match_no - 1,
+                "csv": os.path.join(self.report_root, self.bvid,
+                                    f"match_{self.match_no - 1}", "detect_report.csv")}
+
+    def force_new_match(self, frame, fname):
+        """预扫边界强制开新局: 仅在 RECORD 状态下可执行, 否则返回 None。"""
+        if self.state != "RECORD":
+            return None
+        return self._start_new_match(frame, fname)
 
     def _write_match(self):
         match_dir = os.path.join(self.report_root, self.bvid, f"match_{self.match_no}")
