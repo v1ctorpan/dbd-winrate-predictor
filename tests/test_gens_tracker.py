@@ -156,6 +156,27 @@ class TestGensTracker(unittest.TestCase):
         third = tracker.update(f, resolved, anchor)
         self.assertEqual(third, 4, f"不应回退: third={third}")
 
+    def test_anchor_scale_jitter_does_not_crash(self):
+        """真实视频中 detect_anchor 的 scale 会在帧间小幅抖动, 导致 gens 数字框
+        尺寸跨帧变化(BV1pht 锚点恒定未暴露; BV1aatX6uE3C 冒烟即触发 shape 不匹配崩溃)。
+        回归: 跨 scale 帧间沿用需先 resize 对齐, 不得崩溃且沿用结果。"""
+        base = os.path.join(BASE, "picture", "BV1pht96fEjN")
+        anchor = {"x": 142, "y": 806, "w": 52, "h": 48, "scale": 1.5}
+        big = cv2.imread(os.path.join(base, "gens_0420_four.png"))
+        self.assertIsNotNone(big)
+        h, w = big.shape[:2]
+        k = 0.8
+        small = cv2.resize(big, (max(1, int(w * k)), max(1, int(h * k))))
+        a2 = {"scale": round(1.5 * k, 3)}
+        resolved_full = {"gens_row": {"x0": 0, "y0": 0, "x1": w, "y1": h}}
+        resolved_small = {"gens_row": {"x0": 0, "y0": 0,
+                                       "x1": small.shape[1], "y1": small.shape[0]}}
+        tracker = gens_counter.GensTracker(self.refs, gen=self.gen)
+        first = tracker.update(big, resolved_full, anchor)
+        self.assertEqual(first, 4)
+        second = tracker.update(small, resolved_small, a2)
+        self.assertEqual(second, 4)
+
     def test_reset_clears_state(self):
         ga = {"x": 121, "y": 847, "w": 45, "h": 41, "scale": 1.3}
         tracker = gens_counter.GensTracker(self.refs, gen=self.gen)

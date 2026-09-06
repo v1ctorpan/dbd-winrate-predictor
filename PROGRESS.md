@@ -1,11 +1,11 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
 > 最后更新：2026-09-06
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**；**多线程数据产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送（46 测试 PASS）**；Task5「BV1pht96fEjN 真实视频端到端」排查修复已完成并随本批提交（51 测试 PASS）：gens 阈值(§3.8-A)、hooks 滚动校准(§3.8-B)、count_hooks 防 overlay(§3.9)、hook 持久化地板+HUD 复用(§3.12)、滚动校准跨帧支持度防误锁(§3.12)、gens 260~269s 误读 0(§3.11)。剩余：executed≈dead 状态补充与全片端到端验证（见 §6）。
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**；**多线程数据产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送（46 测试 PASS）**；Task5「BV1pht96fEjN 真实视频端到端」排查修复已完成并随本批提交（51 测试 PASS）：gens 阈值(§3.8-A)、hooks 滚动校准(§3.8-B)、count_hooks 防 overlay(§3.9)、hook 持久化地板+HUD 复用(§3.12)、滚动校准跨帧支持度防误锁(§3.12)、gens 260~269s 误读 0(§3.11)。新视频 BV1aatX6uE3C（7min 剪辑向）端到端验证完成（52 测试 PASS）：暴露并修复 gens 帧间沿用 scale 抖动崩溃（§3.13），产出 4 条自动分段记录入 dataset（label=-1）。剩余：executed≈dead 状态补充与 BV1pht 全片端到端验证（见 §6）。
 
 ## 分支与提交状态（2026-09-04）
 
-- `main`（当前分支）：Task1-4（`80bdf87` 半秒帧命名/parse_time → `f3de624` 流式检测器 → `8f6f730` dataset_encoder append/read → `83deb92` 三线程 run_pipeline）已推送 origin/main；`data_pipeline` 分支（含 `3c55d96` WAIT 稳定性修复）已合并回 main。Task5 排查修复（gens 阈值 0.55 / hooks 滚动校准 / count_hooks 防 overlay / HookPersist 持久化地板 / 槽位跨帧支持度防误锁 / gens 260~269s 误读 0）随本次提交推送，提交后全量 51 测试 PASS（见 §3.8~3.12）。
+- `main`（当前分支）：Task1-4（`80bdf87` 半秒帧命名/parse_time → `f3de624` 流式检测器 → `8f6f730` dataset_encoder append/read → `83deb92` 三线程 run_pipeline）已推送 origin/main；`data_pipeline` 分支（含 `3c55d96` WAIT 稳定性修复）已合并回 main。Task5 排查修复（gens 阈值 0.55 / hooks 滚动校准 / count_hooks 防 overlay / HookPersist 持久化地板 / 槽位跨帧支持度防误锁 / gens 260~269s 误读 0）随本次提交推送，提交后全量 51 测试 PASS（见 §3.8~3.12）。后续新视频 BV1aatX6uE3C 端到端 + gens scale 抖动修复（§3.13，52 测试 PASS）与 dataset 追加记录尚未提交。
 - `data_pipeline`：已合入 main，无待合回改动。origin/data_pipeline 保留。
 - 产物：BV1pht96fEjN.mp4（1080p，14.3 分钟，435 MB）已下载到 `picture/raw_videos/`（gitignore）；锚点经探查 + 用户目视确认 = `(142,806) scale=1.5`（与 BV1 的 (121,847)@1.3 不同，hook_regions.json 仅 key 到 BV1Uu8z6eEVM，不会误用）。
 - **整体待办见 §6**。
@@ -264,6 +264,16 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 **验证**：TDD 先 RED 后 GREEN；全量 51 测试 PASS。BV1pht 端到端 hooks 恒 0 的最终验证仍待 §6.8 全片回放。
 
+### 3.13 新视频 BV1aatX6uE3C 端到端 + gens 帧间沿用 scale 抖动崩溃修复（2026-09-06）
+
+**背景**：用新下载视频 BV1aatX6uE3C（标题「'对你没听错 审判者居然还加强'【黎明杀机】」，1080p30，418s，221MB，`picture/raw_videos/`，gitignore）做产线端到端验证并写 dataset。0.5s 采样冒烟（120 帧）**立即崩溃**：`gens_counter.GensTracker.update` 帧间沿用 `_ncc(digit_crop, prev_crop)` 时两帧 anchor scale 不同（BV1pht 锚点恒定所以从未暴露），数字框宽 43 vs 34 → matmul shape 不匹配 `ValueError`。用全片帧差探测确认该片为高能剪辑向（418s 内 814 次画面大跳），非单一完整对局。
+
+**修复**：帧间沿用前先校验两 crop 尺寸，不一致则 `cv2.resize` 对齐再比 NCC（`gens_counter.py`）；模板重识别逻辑不变。新增回归 `test_anchor_scale_jitter_does_not_crash`（`tests/test_gens_tracker.py`，尺寸 0.8× 前帧 + scale 0.8 锚点，第二帧应沿用 4 不崩溃）。
+
+**端到端结果**（全片 0.5s×836 帧，~21min 实跑）：产出 4 个自动分段 match（match_1~4），全部 encode+append 至 `dataset/videos.jsonl`（`BV1aatX6uE3C:1~4`，label=-1，features 30 维、时间列单调、1/2 帧无信息量但 match_3/4 为 2min/6min 连续段、含 gens 5→2/0 演化与 dying/injured 状态）。`run_video` 返回的 `closed=[]` 系统计口径缺陷：closed_q 已被 encoder 线程消费空后才统计行数，实际以 append 记录数为准。结论：检测器对剪辑向视频可分长段跟踪并自动分段，但此类视频非单局样本，标签数据仍须用完整单局视频。
+
+**验证**：全量 52 测试 PASS（新增 1 项）。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）
@@ -325,6 +335,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 6. ✅（已修）gens 260~269s 误读 0（用户真值 =4，画面正常）→ 根因：单帧伪 0 + prev=0 单调锁死；`LOW_ICON_THR=0.45` + 递减守卫仅限 1..5。回归测试 + 全量 51 PASS，见 §3.11。
 7. ⏳ 状态补充：executed≈dead（Mori 处决画面/结算）。
 8. ⏳ 上述收敛后：BV1pht96fEjN 全片（14.3min）端到端 `run_pipeline.py`（~55min）→ match_N/CSV + `dataset/videos.jsonl` 的 `BV1pht96fEjN:N` 记录；校验数据行（features 长度、id、label=-1）；更新 `docs/dataset_format.md`。
+   - ✅（已完成，先行）新视频 BV1aatX6uE3C（7.0min 剪辑向）端到端验证：冒烟暴露 gens 帧间沿用 scale 抖动崩溃并修复（§3.13）；全片 ~21min 实跑产出 4 个自动分段 match，追加 `BV1aatX6uE3C:1~4` 至 `dataset/videos.jsonl`（现共 6 行，label=-1，features 30 维校验合法）。结论：检测器对剪辑向视频可分长段跟踪（match_3/4 为 2min/6min 连续段，含 gens 演化与受伤状态），但含零散 healthy/gens5 段，非单局数据，标签扩充仍以完整单局视频为准。
 
 **后续规划（已定稿未实现）**：
 9. 实现对局序列数据管道（设计+计划已完成，见 3.5）：`dataset_encoder.py` → `match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py`

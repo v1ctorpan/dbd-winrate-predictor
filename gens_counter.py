@@ -184,16 +184,20 @@ class GensTracker:
 
         digit_w = int(DIGIT_X * anchor["scale"])
         digit_crop = crop[:, 0:digit_w]
+        dh, dw = digit_crop.shape[:2]
 
         # 1) 帧间沿用：与前一帧数字框高度相似则沿用结果
+        #    （scale 抖动会使数字框尺寸跨帧变化，先 resize 对齐再比，避免 shape 崩溃）
         if (self.prev_crop is not None and self.prev_digit is not None):
-            sim = _ncc(digit_crop, self.prev_crop)
+            p = self.prev_crop
+            if p.shape[:2] != digit_crop.shape[:2]:
+                p = cv2.resize(p, (dw, dh), interpolation=cv2.INTER_AREA)
+            sim = _ncc(digit_crop, p)
             if sim >= self.track_ncc:
                 self.prev_crop = digit_crop
                 return self.prev_digit
 
         # 2) 模板重识别
-        dh, dw = digit_crop.shape[:2]
         best, best_score = None, -1.0
         for digit, imgs in self.refs.items():
             for ref in imgs:

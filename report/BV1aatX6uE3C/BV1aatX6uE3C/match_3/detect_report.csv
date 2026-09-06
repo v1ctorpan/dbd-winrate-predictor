@@ -1,0 +1,235 @@
+﻿frame,scale,p1,p2,p3,p4,hooks,gens,机器标注
+frame_00_59.0.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,5,正常
+frame_00_59.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,5,正常
+frame_01_00.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,5,正常
+frame_01_00.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,5,正常
+frame_01_01.0.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_01.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_02.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_02.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_03.0.jpg,1.50,healthy,healthy,injured,unknown,0/0/0/0,3,p4未知
+frame_01_03.5.jpg,1.50,healthy,healthy,injured,unknown,0/0/0/0,3,p4未知
+frame_01_04.0.jpg,1.50,unknown,unknown,healthy,healthy,0/0/0/0,3,p1未知; p2未知
+frame_01_04.5.jpg,1.50,unknown,healthy,healthy,unknown,0/0/0/0,3,p1未知; p4未知
+frame_01_05.0.jpg,1.50,healthy,healthy,unknown,unknown,0/0/0/0,3,p3未知; p4未知
+frame_01_05.5.jpg,1.50,healthy,healthy,unknown,unknown,0/0/0/0,3,p3未知; p4未知
+frame_01_06.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_06.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_07.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_07.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_08.0.jpg,1.50,healthy,healthy,unknown,healthy,0/0/0/0,3,p3未知
+frame_01_08.5.jpg,1.50,healthy,injured,unknown,healthy,0/0/0/0,3,p3未知
+frame_01_09.0.jpg,1.50,healthy,healthy,unknown,healthy,0/0/0/0,3,p3未知
+frame_01_09.5.jpg,1.50,healthy,unknown,healthy,unknown,0/0/0/0,3,p2未知; p4未知
+frame_01_10.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_10.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_01_11.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_01_11.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_01_12.0.jpg,1.50,healthy,healthy,injured,injured,0/0/0/0,3,正常
+frame_01_12.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_13.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_13.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_14.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_14.5.jpg,1.50,healthy,unknown,healthy,healthy,0/0/0/0,3,p2未知
+frame_01_15.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_15.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_16.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_16.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_17.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_17.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_18.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_18.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_19.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_19.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_20.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_20.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_21.0.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_21.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_22.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_22.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_23.0.jpg,1.50,unknown,healthy,healthy,injured,0/0/0/0,3,p1未知
+frame_01_23.5.jpg,1.50,unknown,healthy,injured,healthy,0/0/0/0,3,p1未知
+frame_01_24.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_24.5.jpg,1.50,unknown,healthy,injured,healthy,0/0/0/0,3,p1未知
+frame_01_25.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_25.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_26.0.jpg,1.60,unknown,unknown,unknown,unknown,0/0/0/0,3,p1未知; p2未知; p3未知; p4未知
+frame_01_26.5.jpg,1.50,injured,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_27.0.jpg,1.50,healthy,injured,healthy,injured,0/0/0/0,3,正常
+frame_01_27.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_28.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_28.5.jpg,1.50,healthy,healthy,injured,injured,0/0/0/0,3,正常
+frame_01_29.0.jpg,1.50,injured,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_29.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_30.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_30.5.jpg,1.50,unknown,healthy,healthy,injured,0/0/0/0,3,p1未知
+frame_01_31.0.jpg,1.50,unknown,healthy,healthy,injured,0/0/0/0,3,p1未知
+frame_01_31.5.jpg,1.50,unknown,healthy,injured,injured,0/0/0/0,3,p1未知
+frame_01_32.0.jpg,1.50,healthy,injured,healthy,injured,0/0/0/0,3,正常
+frame_01_32.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_33.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_33.5.jpg,1.50,injured,healthy,injured,injured,0/0/0/0,3,正常
+frame_01_34.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_34.5.jpg,1.50,healthy,unknown,healthy,injured,0/0/0/0,3,p2未知
+frame_01_35.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_35.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_36.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_36.5.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_37.0.jpg,1.50,unknown,healthy,healthy,injured,0/0/0/0,3,p1未知
+frame_01_37.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_38.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_38.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_39.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_39.5.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_40.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_40.5.jpg,1.50,injured,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_41.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_41.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_01_42.0.jpg,1.50,injured,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_42.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_43.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_43.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_44.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_44.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_45.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_45.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_46.0.jpg,1.50,unknown,unknown,healthy,healthy,0/0/0/0,3,p1未知; p2未知
+frame_01_46.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_47.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_47.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_48.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_48.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_49.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_49.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_50.0.jpg,1.50,injured,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_50.5.jpg,1.50,unknown,unknown,injured,healthy,0/0/0/0,3,p1未知; p2未知
+frame_01_51.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_51.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_52.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_52.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_53.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_53.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_01_54.0.jpg,1.50,injured,healthy,injured,injured,0/0/0/0,3,正常
+frame_01_54.5.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_55.0.jpg,1.50,unknown,healthy,healthy,injured,0/0/0/0,3,p1未知
+frame_01_55.5.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_01_56.0.jpg,1.50,unknown,unknown,healthy,injured,0/0/0/0,3,p1未知; p2未知
+frame_01_56.5.jpg,1.50,healthy,healthy,unknown,healthy,0/0/0/0,3,p3未知
+frame_01_57.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_57.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_58.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_58.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_01_59.0.jpg,1.50,injured,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_01_59.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_00.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_00.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_01.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_01.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_02.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_02.5.jpg,1.50,unknown,unknown,healthy,healthy,0/0/0/0,3,p1未知; p2未知
+frame_02_03.0.jpg,1.60,unknown,unknown,unknown,unknown,0/0/0/0,3,p1未知; p2未知; p3未知; p4未知
+frame_02_03.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_04.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_04.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_05.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,3,p1未知
+frame_02_05.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_06.0.jpg,1.50,injured,healthy,dying,healthy,0/0/0/0,3,正常
+frame_02_06.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_07.0.jpg,1.50,healthy,healthy,unknown,unknown,0/0/0/0,3,p3未知; p4未知
+frame_02_07.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_08.0.jpg,1.50,healthy,injured,injured,healthy,0/0/0/0,3,正常
+frame_02_08.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_09.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_09.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_10.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_10.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_11.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_11.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_12.0.jpg,1.50,injured,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_12.5.jpg,1.50,unknown,healthy,injured,healthy,0/0/0/0,3,p1未知
+frame_02_13.0.jpg,1.50,unknown,unknown,injured,healthy,0/0/0/0,3,p1未知; p2未知
+frame_02_13.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_14.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_14.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_15.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_15.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_16.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_02_16.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_17.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_17.5.jpg,1.50,injured,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_18.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_18.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_19.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_19.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,3,正常
+frame_02_20.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_20.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_21.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_21.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_22.0.jpg,1.50,unknown,healthy,unknown,healthy,0/0/0/0,3,p1未知; p3未知
+frame_02_22.5.jpg,1.50,healthy,unknown,injured,healthy,0/0/0/0,3,p2未知
+frame_02_23.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_23.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_24.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_24.5.jpg,1.50,injured,injured,unknown,unknown,0/0/0/0,3,p3未知; p4未知
+frame_02_25.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_25.5.jpg,1.50,healthy,unknown,injured,unknown,0/0/0/0,3,p2未知; p4未知
+frame_02_26.0.jpg,1.50,unknown,unknown,healthy,healthy,0/0/0/0,3,p1未知; p2未知
+frame_02_26.5.jpg,1.50,healthy,unknown,healthy,healthy,0/0/0/0,3,p2未知
+frame_02_27.0.jpg,1.50,healthy,injured,healthy,healthy,0/0/0/0,3,正常
+frame_02_27.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_02_28.0.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_02_28.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,3,正常
+frame_02_29.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_29.5.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_30.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_30.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,3,p4未知
+frame_02_31.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_31.5.jpg,1.50,healthy,injured,healthy,healthy,0/0/0/0,3,正常
+frame_02_32.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_32.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_33.0.jpg,1.50,unknown,unknown,injured,healthy,0/0/0/0,3,p1未知; p2未知
+frame_02_33.5.jpg,1.50,unknown,unknown,healthy,healthy,0/0/0/0,3,p1未知; p2未知
+frame_02_34.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_34.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_35.0.jpg,1.50,healthy,healthy,injured,unknown,0/0/0/0,3,p4未知
+frame_02_35.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_36.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_36.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_37.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,3,正常
+frame_02_37.5.jpg,1.50,healthy,healthy,unknown,healthy,0/0/0/0,2,p3未知
+frame_02_38.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_38.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_39.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_39.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_40.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_40.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_41.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_41.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_42.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_42.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,2,正常
+frame_02_43.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_43.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_44.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_44.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_45.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_45.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_46.0.jpg,1.50,unknown,unknown,unknown,unknown,0/0/0/0,2,p1未知; p2未知; p3未知; p4未知
+frame_02_46.5.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,2,正常
+frame_02_47.0.jpg,1.50,injured,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_47.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_48.0.jpg,1.50,healthy,unknown,unknown,healthy,0/0/0/0,2,p2未知; p3未知
+frame_02_48.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_49.0.jpg,1.50,unknown,healthy,healthy,healthy,0/0/0/0,2,p1未知
+frame_02_49.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_50.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_50.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,2,p4未知
+frame_02_51.0.jpg,1.50,healthy,healthy,unknown,unknown,0/0/0/0,2,p3未知; p4未知
+frame_02_51.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,2,p4未知
+frame_02_52.0.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,2,p4未知
+frame_02_52.5.jpg,1.60,unknown,unknown,injured,unknown,0/0/0/0,2,p1未知; p2未知; p4未知
+frame_02_53.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_53.5.jpg,1.50,healthy,healthy,injured,healthy,0/0/0/0,2,正常
+frame_02_54.0.jpg,1.50,healthy,healthy,healthy,injured,0/0/0/0,2,正常
+frame_02_54.5.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_55.0.jpg,1.50,healthy,healthy,healthy,healthy,0/0/0/0,2,正常
+frame_02_55.5.jpg,1.50,healthy,healthy,healthy,unknown,0/0/0/0,0,p4未知
