@@ -65,10 +65,12 @@ class TestEncodeVideo(unittest.TestCase):
             self._write_csv(csv_path)
             rec = de.encode_csv(csv_path, "BV1", label=4)
             self.assertEqual(rec["id"], "BV1")
+            self.assertEqual(rec["match"], 1)
             self.assertEqual(rec["title"], "")
             self.assertEqual(rec["url"], "")
             self.assertEqual(rec["label"], 4)
             self.assertNotIn("t_list", rec)
+            self.assertNotIn("bvid", rec)
             self.assertEqual(len(rec["features"]), 2)
             self.assertEqual(len(rec["features"][0]), 30)
             self.assertEqual(rec["features"][0][28], 5.0)
@@ -76,13 +78,26 @@ class TestEncodeVideo(unittest.TestCase):
             self.assertEqual(rec["features"][1][28], 5.0)
             self.assertEqual(rec["features"][1][29], 10.0)
 
+    def test_encode_csv_meta_match(self):
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "in.csv")
+            self._write_csv(csv_path)
+            rec = de.encode_csv(csv_path, "BV1X", label=-1,
+                                meta={"match": 3, "title": "标题",
+                                      "url": "https://www.bilibili.com/video/BV1X"})
+            self.assertEqual(rec["id"], "BV1X")
+            self.assertEqual(rec["match"], 3)
+            self.assertEqual(rec["title"], "标题")
+            self.assertEqual(rec["url"], "https://www.bilibili.com/video/BV1X")
+            self.assertEqual(rec["label"], -1)
+
 
 class TestWriteVideosJsonl(unittest.TestCase):
     def test_write_and_read_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
             out_path = os.path.join(d, "videos.jsonl")
-            rec1 = {"id": "BV1", "title": "", "url": "", "features": [[0.0] * 30, [1.0] * 30], "label": 3}
-            rec2 = {"id": "BV16", "title": "", "url": "", "features": [[0.5] * 30], "label": 1}
+            rec1 = {"id": "BV1", "title": "", "url": "", "match": 1, "features": [[0.0] * 30, [1.0] * 30], "label": 3}
+            rec2 = {"id": "BV16", "title": "", "url": "", "match": 1, "features": [[0.5] * 30], "label": 1}
             de.write_videos_jsonl([rec1, rec2], out_path)
             with open(out_path, encoding="utf-8") as f:
                 lines = [json.loads(l) for l in f]
@@ -96,14 +111,15 @@ class TestAppendRecord(unittest.TestCase):
     def test_append_then_read_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "videos.jsonl")
-            de.append_record(p, {"id": "BV1Z:1", "title": "", "url": "",
+            de.append_record(p, {"id": "BV1Z", "title": "", "url": "", "match": 1,
                                  "features": [[0.0] * 30], "label": -1})
-            de.append_record(p, {"id": "BV1Z:2", "title": "", "url": "",
+            de.append_record(p, {"id": "BV1Z", "title": "", "url": "", "match": 2,
                                  "features": [[1.0] * 30], "label": -1})
             recs = de.read_records(p)
             self.assertEqual(len(recs), 2)
-            self.assertEqual(recs[0]["id"], "BV1Z:1")
-            self.assertEqual(recs[1]["id"], "BV1Z:2")
+            self.assertEqual(recs[0]["id"], "BV1Z")
+            self.assertEqual(recs[1]["id"], "BV1Z")
+            self.assertEqual(recs[1]["match"], 2)
             self.assertEqual(recs[1]["label"], -1)
 
 

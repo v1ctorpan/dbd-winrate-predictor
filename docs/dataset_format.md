@@ -1,6 +1,6 @@
 # 数据集格式说明 — dataset/videos.jsonl
 
-> 日期：2026-09-02
+> 日期：2026-09-02（2026-09-06 更新：新增 `match` 字段；`title`/`url` 由产线自动填充）
 > 单文件存储，每行一条视频（一局），供序列模型（GRU）训练与实时推理。
 
 ## 1. 目录布局
@@ -12,20 +12,21 @@ dataset/
 
 ## 2. 行结构
 
-每行一个 JSON 对象，表示一条视频（一整局对局）：
+每行一个 JSON 对象，表示一场对局样本。字段顺序固定：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | string | 视频编号，如 `BV1Uu8z6eEVM` |
-| `title` | string | 视频标题，可截断。暂为空，后续从 bilibili 抓取填充 |
-| `url` | string | 视频链接，如 `https://www.bilibili.com/video/BV1Uu8z6eEVM`。暂为空，后续填充 |
+| `id` | string | 视频 BV 号，如 `BV1Uu8z6eEVM` |
+| `title` | string | 视频标题。产线运行时自动从 `picture/raw_videos/{id}.info.json` 填充；无则空串 |
+| `url` | string | canonical 视频链接 `https://www.bilibili.com/video/{id}`。产线运行时自动填充；无则空串 |
+| `match` | int | 局号。视频内含多局时 1..N；整段式视频（一视频一局）固定 1 |
 | `features` | float[][30] | 逐帧 30 维特征，`features[i]` = 第 i 帧，长度 = 该局帧数 T |
-| `label` | int | 结局标签 = 逃生人数 0–4（5 类多分类目标） |
+| `label` | int | 结局标签 = 逃生人数 0–4（5 类多分类目标）；产线自动分段未标注局为 -1 |
 
 示例：
 
 ```json
-{"id": "BV1Uu8z6eEVM", "title": "", "url": "",
+{"id": "BV1Uu8z6eEVM", "title": "", "url": "", "match": 1,
  "features": [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, "…共30维…"],
               ["…第2帧…"], "…共110帧…"],
  "label": 3}
@@ -52,14 +53,19 @@ dataset/
 
 - `label` = 结算画面逃生人数 0–4
 - 种子数据人工标注：BV1 → 3，BV16 → 1
-- 后续：从结算画面自动标注；`title`/`url` 从 bilibili 抓取
+- 后续：从结算画面自动标注；`title`/`url` 在产线运行时自动填充（见下）
 
 ## 6. 生成方式
 
+- 数据集手工/种子记录由 `dataset_encoder.py` 的 `encode_csv` 生成（支持传 `meta` 覆盖 `match/title/url`）
+- 产线自动写入：`run_pipeline.py` 在把自动分段写入 jsonl 前，通过 `_resolve_meta` 读取
+  `picture/raw_videos/{bvid}.info.json`（`title`、`webpage_url`）填充 `title`/`url`，并把局号写入 `match`；
+  `--title`/`--url` 可显式覆盖，缺省 url 兜底为 `https://www.bilibili.com/video/{bvid}`
+
 ```bash
-# 需先有 report/{视频ID}/detect_report.csv（make_report.py 产出）
 python dataset_encoder.py
-# 输出 dataset/videos.jsonl
+# 输出 dataset/videos.jsonl（手工种子记录）
+python run_pipeline.py --video ... # 产线自动分段 + 写入（title/url/match 自动填充）
 ```
 
-新增视频流程：抽帧 → make_report 生成 CSV → 人工标注 label → 在 `dataset_encoder.py` main 的 spec 追加一行 → 重跑。
+新增视频流程：下载（含 info.json）→ 抽帧 → make_report 生成 CSV → 人工标注 label → 追加写入。

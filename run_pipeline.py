@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import queue
 import threading
@@ -49,16 +50,40 @@ def _iter_dir_frames(src_dir, sample=None):
             yield img, n
 
 
-def _encode_match(bvid, report_root, match_no, videos_path):
+def _encode_match(bvid, report_root, match_no, videos_path, meta=None):
     csv_path = os.path.join(report_root, bvid, f"match_{match_no}", "detect_report.csv")
     if not os.path.exists(csv_path):
         return 0
-    rec = de.encode_csv(csv_path, f"{bvid}:{match_no}", label=-1)
+    meta = dict(meta or {})
+    meta["match"] = match_no
+    rec = de.encode_csv(csv_path, bvid, label=-1, meta=meta)
     return de.append_record(videos_path, rec)
 
 
+def _resolve_meta(bvid, title=None, url=None):
+    """产线元数据: 有 {raw_videos}/{bvid}.info.json 就自动填 title/webpage_url。
+
+    显式 --title/--url 优先；否则 url 兜底 canonical 视频页。
+    """
+    meta = {"title": "", "url": f"https://www.bilibili.com/video/{bvid}"}
+    info = os.path.join(PICTURE, "raw_videos", f"{bvid}.info.json")
+    if os.path.exists(info):
+        try:
+            with open(info, encoding="utf-8") as f:
+                d = json.load(f)
+            meta["title"] = d.get("title", "")
+            meta["url"] = d.get("webpage_url", "") or meta["url"]
+        except (OSError, ValueError):
+            pass
+    if title is not None:
+        meta["title"] = title
+    if url is not None:
+        meta["url"] = url
+    return meta
+
+
 def run_frames_dir(src_dir, bvid, sample=None, videos=DATASET,
-                   report_root=None, frames_root=None, budget=12):
+                   report_root=None, frames_root=None, budget=12, meta=None):
     """离线/测试入口: 直接把已有帧目录喂给检测器(单线程串行)。"""
     report_root = report_root or os.path.join(BASE, "report", bvid)
     frames_root = frames_root or PICTURE
@@ -72,12 +97,12 @@ def run_frames_dir(src_dir, bvid, sample=None, videos=DATASET,
     closed += det.finish()
     n_rec = 0
     for m in closed:
-        n_rec += _encode_match(bvid, report_root, m, videos)
+        n_rec += _encode_match(bvid, report_root, m, videos, meta=meta)
     return {"matches": len(closed), "records": n_rec, "closed": closed}
 
 
 def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
-              frames_root=None, budget=12, sample=None):
+              frames_root=None, budget=12, sample=None, meta=None):
     """三线程流水线:
       T1 解码: _iter_video_frames -> q(带 EOF 哨兵)
       T2 检测: 消费 q 喂 StreamingDetector(落盘 match 帧 + 写 CSV) -> closed_q
@@ -125,7 +150,7 @@ def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
                 closed_q.task_done()
                 break
             try:
-                _encode_match(bvid, report_root, item, videos)
+                _encode_match(bvid, report_root, item, videos, meta=meta)
             except Exception as e:  # noqa: BLE001
                 errors.append(e)
             closed_q.task_done()
@@ -157,14 +182,17 @@ def main():
     ap.add_argument("--sample", type=int, default=None)
     ap.add_argument("--videos", default=DATASET)
     ap.add_argument("--budget", type=int, default=12)
+    ap.add_argument("--title", default=None, help="视频标题(缺省自动读 raw_videos/{bvid}.info.json)")
+    ap.add_argument("--url", default=None, help="视频 url(缺省 canonical 或 info.json webpage_url)")
     args = ap.parse_args()
+    meta = _resolve_meta(args.bvid, title=args.title, url=args.url)
     if os.path.isdir(args.source):
         stats = run_frames_dir(args.source, args.bvid, sample=args.sample,
-                               videos=args.videos)
+                               videos=args.videos, meta=meta)
     else:
         stats = run_video(args.source, args.bvid, interval=args.interval,
                           videos=args.videos, sample=args.sample,
-                          budget=args.budget)
+                          budget=args.budget, meta=meta)
     print(f"matches={stats['matches']} records={stats['records']} -> {args.videos}")
     print(f"closed={stats['closed']}")
 

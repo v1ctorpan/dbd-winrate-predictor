@@ -34,15 +34,23 @@ def feature_vector(row):
     return feats
 
 
-def encode_csv(csv_path, video_id, label):
+def encode_csv(csv_path, video_id, label, meta=None):
+    """把 detect_report.csv 编码为一条 dataset 记录。
+
+    video_id = 纯 BV号（bvid，恢复种子原样，不含 :match 后缀）。
+    meta 可选: {"match": 局号(默认 1), "title": ..., "url": ...}。
+    局号由 meta["match"] 单独记录，title/url 由产线/调用方填充。
+    """
+    meta = meta or {}
     rows = []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
             rows.append(r)
     return {
         "id": video_id,
-        "title": "",
-        "url": "",
+        "title": meta.get("title", ""),
+        "url": meta.get("url", ""),
+        "match": int(meta.get("match", 1)),
         "features": [feature_vector(r) for r in rows],
         "label": int(label),
     }
