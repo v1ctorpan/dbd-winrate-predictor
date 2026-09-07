@@ -1,14 +1,14 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
-> 最后更新：2026-09-06
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均已对测试数据 100% 正确；发电机数字识别已升级为**通用模板库 + 时序状态机（GensTracker）**；**多线程数据产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送（46 测试 PASS）**；Task5「BV1pht96fEjN 真实视频端到端」排查修复已完成并随本批提交（51 测试 PASS）：gens 阈值(§3.8-A)、hooks 滚动校准(§3.8-B)、count_hooks 防 overlay(§3.9)、hook 持久化地板+HUD 复用(§3.12)、滚动校准跨帧支持度防误锁(§3.12)、gens 260~269s 误读 0(§3.11)。新视频 BV1aatX6uE3C（7min 剪辑向）端到端验证完成（52 测试 PASS）：暴露并修复 gens 帧间沿用 scale 抖动崩溃（§3.13），产出 4 条自动分段记录入 dataset（label=-1）。剩余：executed≈dead 状态补充与 BV1pht 全片端到端验证（见 §6）。
+> 最后更新：2026-09-08
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；多线程产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送；**全量 UT 提速 ~10x（583s→~56s，§3.15）**；Task5 排查修复（gens 阈值/滚动校准/防 overlay/持久化地板/防误锁/误读 0，§3.8~3.12）已推送；**新视频 BV1QUt766Etg（21.4min）验证驱动的鲁棒性修复 + match 级并行产线已完成并推送（§3.16，全量 91 tests ~59s PASS）**：越界/空 crop 守卫、WAIT 锚点可信性确认、prescan 全候选共识与头像骤变切局、`run_video_parallel` 按局多进程（全流程 ~4min）。dataset 现 7 行（BV1Uu/BV16/BV1aat 单局 + BV1QUt 4 局，均 label=-1 待标注）。剩余：executed≈dead、BV1pht 全片端到端（并行提速后分钟级）、局内多分片并行（见 §6、§3.17 注意点）。
 
-## 分支与提交状态（2026-09-04）
+## 分支与提交状态（2026-09-08）
 
-- `main`（当前分支）：Task1-4（`80bdf87` 半秒帧命名/parse_time → `f3de624` 流式检测器 → `8f6f730` dataset_encoder append/read → `83deb92` 三线程 run_pipeline）已推送 origin/main；`data_pipeline` 分支（含 `3c55d96` WAIT 稳定性修复）已合并回 main。Task5 排查修复（gens 阈值 0.55 / hooks 滚动校准 / count_hooks 防 overlay / HookPersist 持久化地板 / 槽位跨帧支持度防误锁 / gens 260~269s 误读 0）随本次提交推送，提交后全量 51 测试 PASS（见 §3.8~3.12）。后续新视频 BV1aatX6uE3C 端到端 + gens scale 抖动修复（§3.13，52 测试 PASS）与 dataset 追加记录尚未提交。
-- `data_pipeline`：已合入 main，无待合回改动。origin/data_pipeline 保留。
-- 产物：BV1pht96fEjN.mp4（1080p，14.3 分钟，435 MB）已下载到 `picture/raw_videos/`（gitignore）；锚点经探查 + 用户目视确认 = `(142,806) scale=1.5`（与 BV1 的 (121,847)@1.3 不同，hook_regions.json 仅 key 到 BV1Uu8z6eEVM，不会误用）。
-- **整体待办见 §6**。
+- `main`（当前分支）：Task1-4（`80bdf87`~`83deb92`）与 Task5 修复均已推送。本会话新增推送：`6f5dd84`（UT 提速 ~56s + BV1aat 单局 dataset 合并，§3.15）、`c450619`（gens/状态空 crop 守卫 + prescan 全候选共识/头像骤变切局，§3.16 前段）、`7a203ab`（并行产线 run_video_parallel + 确认式 WAIT + PROGRESS §3.16）。全量 **91 tests ~59s PASS**。
+- `data_pipeline`：已合入 main，本地残留分支可删（`git branch -d data_pipeline`）。
+- 产物：BV1pht96fEjN.mp4（1080p 14.3min 435MB）、BV1QUt766Etg.mp4（1080p 21.4min 641.8MB）均在 `picture/raw_videos/`（gitignore）。
+- **整体待办见 §6；注意点见 §3.17**。
 
 ## 0. 基础要求
 - 请使用中文进行对话，在compaction中要显式提到这一点
@@ -349,6 +349,17 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - match_1 11.0–629.5s(1238 帧)：第一局，健康/受伤演化，gens 5→4→2→1→0 ✓
 - match_2 680.5–844.5s(329)/ match_3 845.0–866.5s(44)/ match_4 867.0–1286.5s(840)：680s 后**状态可读、无坏段**（修复前全 unknown+gens0）；845/867s 处 montage 剪辑导致 HUD 短暂消失而分段（本片非连续单局，同 BV1aat 情形）。
 
+### 3.17 注意点 / 接手提示（2026-09-08，显式列出）
+
+1. **运行环境命令**：全量 UT = `python -m unittest discover -s tests`（base Python 3.8.18，~59s）。多局视频全量 = `python run_pipeline.py <mp4> <bvid> --prescan --parallel`（`run_video_parallel`；单局/锚点不可信自动回退旧 `run_video_prescan`）。新视频下载用 dbd env `python -m yt_dlp -f 30080 --write-info-json -c -o "picture/raw_videos/%(id)s.%(ext)s" <url>`（bilibili 需 `--add-header "Referer:https://www.bilibili.com/"` + Chrome UA 防 HTTP 412）。
+2. **BV1QUt766Etg 是剪辑向视频**：680s 后因 montage 剪辑（845/867s HUD 短暂消失）被切成 match_2/3/4，**不是三个独立对局**；其数据当前仅作检测质量验证，不宜直接作为标注训练样本（与 BV1aat 结论一致，训练样本仍应以完整单局视频为准）。dataset 里 4 行 label=-1 保留，后续可人工合并/取舍。
+3. **`run_video_parallel` 的帧不落盘**：worker 把帧写进临时 scratch 后删除（只保留 CSV 入 report + dataset）。如需可视核对帧需另行抽取或改代码（frames_root 参数目前只影响单局回退路径）。
+4. **确认式 WAIT 语义变化**：给 `anchor_prior` 后不再立即开局，须先验附近连续出现 HUD 图标（`wait_min_frames` 帧）才 CALIBRATE——这修掉了"转场帧建基线→整局 unknown"的 bug，但也意味着**开局前无 HUD 的帧不会产生行**（属预期）。
+5. **prescan 头像骤变规则优先级**：当存在"连续 ≥2 样本 4 头像 NCC 骤降"时会丢弃该窗口内 gens 回 5 的伪边界（否则如 BV1QUt 会把第二局开头误切到 950s）。若未来出现"换人不伴随头像骤变"的多局视频，此规则可能漏切——届时需再评估（现由 RECORD 兜底）。
+6. **`run_video_prescan` 旧路径的换局**仍用整片单检测器 + force_new_match，对"第二局开局在转场后"的基线处理不如并行路径可靠；新视频优先走 `--parallel`。
+7. **左缘伪锚点(scale≈1.1, x≈10) 广泛存在**（BV1QUt 每帧都可能命中，score 0.74–0.80）：`_anchor_plausible`/确认式 WAIT 已拦截；但 `find_gen_anchors` 本身仍会返回它，任何直接调它的新代码需自己过滤。
+8. 未提交的本地文件：`asset/icon_executed.jpg`（executed 状态待办用，PROGRESS 旧文记 .png，实际命名 .jpg，用前核对）、调试 montage PNG（`picture/BV1QUt766Etg_*.png`）、`report/BV1QUt766Etg/`——均不入库。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）
@@ -401,31 +412,18 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ## 6. 待办（下一步）
 
-**main（当前分支，Task1-4 + WAIT 修复已推送；Task5 排查修复随本次提交，见 §3.8~3.12）**：
+**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) 均已推送（见 §分支与提交状态）。dataset 现 7 行（BV1Uu/BV16/BV1aat + BV1QUt×4，label=-1）。
 
-**2026-09-06（本提交，已推送）**：
-- ✅ 换局误切修复：孤立单帧 0 不再切局（`MIN_END_ZERO_RUN=2`，§3.14）+ 回归。
-- ✅ 10s 预扫优化流程全链路（`prescan.py` + `StreamingDetector` anchor_prior/detect_match_end/force_new_match + `run_pipeline.run_video_prescan` + `--prescan`，§3.14）：抽样确认 HUD 锚点 & 双条件（gens 异常跳变 ∩ 4 头像 NCC<0.8）判多局；单局关自动切、多局按预扫边界强切、锚点不可信回退旧产线。定向测试全绿；全量回归待跑。
-- ✅ BV1aat 单局 dataset 合并（4 行→1 行 ~405.5s，label=-1）已完成（2026-09-07，离线拼接 match1~4，796 帧；未重跑 BV1aat）。
-- ✅ 全量回归跑一次确认 §3.14 新增不影响旧路径（2026-09-07：84 tests PASS，~583s；同日 §3.15 提速后同套 84 tests ~56s PASS）。
-1. ✅（已修）gens 阈值误判 `GEN_ICON_THR 0.70→0.55`（跨视频判隔证据见 3.8-A）+ 回归测试。
-2. ✅（已修）hooks 开局空槽位 → 前向滚动重校准（3.8-B）+ 回归测试。
-3. ✅（已修）hooks overlay 误检 → `count_hooks` 防"连通亮带贯穿两槽"（3.9）+ `TestCountHooksAntiBlob`。
-4. ✅（已修）持久化地板 `HookPersist`：真钩持续 ≥k 帧才抬升输出 + HUD 消失复用前值（3.12）；待 §6.8 全片端到端验证 BV1pht hooks 恒 0。
-5. ✅（已修）滚动校准防误锁：`calibrate_hook_slots` 加跨帧支持度 `min_frames`，overlay 闪现（1~2 帧）不再被锁成槽位（3.12）。
-6. ✅（已修）gens 260~269s 误读 0（用户真值 =4，画面正常）→ 根因：单帧伪 0 + prev=0 单调锁死；`LOW_ICON_THR=0.45` + 递减守卫仅限 1..5。回归测试 + 全量 51 PASS，见 §3.11。
-7. ⏳ 状态补充：executed≈dead（Mori 处决画面/结算）。
-8. ⏳ 上述收敛后：BV1pht96fEjN 全片（14.3min）端到端 `run_pipeline.py`（~55min）→ match_N/CSV + `dataset/videos.jsonl` 的 `BV1pht96fEjN:N` 记录；校验数据行（features 长度、id、label=-1）；更新 `docs/dataset_format.md`。
-   - ✅（已完成，先行）新视频 BV1aatX6uE3C（7.0min 剪辑向）端到端验证：冒烟暴露 gens 帧间沿用 scale 抖动崩溃并修复（§3.13）；全片 ~21min 实跑产出 4 个自动分段 match，追加 `BV1aatX6uE3C:1~4` 至 `dataset/videos.jsonl`（当时共 6 行，label=-1，features 30 维校验合法）。结论：检测器对剪辑向视频可分长段跟踪（match_3/4 为 2min/6min 连续段，含 gens 演化与受伤状态），但含零散 healthy/gens5 段，非单局数据，标签扩充仍以完整单局视频为准。2026-09-07 已离线合并为单局 record（现共 3 行）。
+**已完成（本会话）**：
+- ✅ 全量 UT 提速 583s→~56s（§3.15，84→91 tests 含新回归，~59s）。
+- ✅ BV1aat 单局 dataset 合并（4 行→1 行，796 帧，label=-1；§3.14/§3.15）。
+- ✅ BV1QUt766Etg 验证：预扫崩溃修复（越界空 crop）、锚点全候选共识（anchor_ok 0.40→0.71）、头像骤变切局（边界 950→630）、确认式 WAIT + `_anchor_plausible`（第二局基线 bug 修复）、`run_video_parallel` 按局多进程 + min 帧过滤（全流程 ~4min15s）；dataset 追加 4 局 label=-1（§3.16）。
 
-**后续规划（已定稿未实现）**：
-9. 实现对局序列数据管道（设计+计划已完成，见 3.5）：`dataset_encoder.py` → `match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py`
-10. 处理剩余 HUD 元素：
-    - ~~发电机剩余数：`gens_row` 区域~~ ✅ `gens_counter.py`
-    - 大门状态：`gate_ui` 区域
-11. 结算画面自动标注结局（当前种子数据人工标注；含 executed≈dead）
-12. 数据积累：更多视频抽帧 → 编码 → 标注，扩充到上千局
-13. 模型超参调优 + 胜率走势图输出
+**下一步（按优先级）**：
+1. ⏳ 状态补充：executed≈dead（Mori 处决画面/结算）；先核对 `asset/icon_executed.jpg`（注意点 8）。
+2. ⏳ BV1pht96fEjN 全片端到端：旧估算 ~55min 已过时，现用 `run_pipeline.py picture/raw_videos/BV1pht96fEjN.mp4 BV1pht96fEjN --prescan --parallel`（分钟级）→ 校验数据行 + 更新 `docs/dataset_format.md`。
+3. ⏳ 局内多分片并行（warm-up 状态交接）：单局视频也压到 ~1min 的可选项（§3.16 后续；工程方案见会话记录）。
+4. 后续规划（定稿未实现）：对局序列数据管道（`dataset_encoder.py`→`match_dataset.py`→`match_model.py`→`train_sequence.py`→`predict_live.py`）、`gate_ui` 大门状态、结算自动标注、数据积累上千局、模型调参+胜率走势图（原 §6 编号 9–13，内容不变）。
 
 ## 7. 环境说明
 
