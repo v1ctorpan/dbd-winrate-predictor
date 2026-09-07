@@ -168,7 +168,8 @@ def _drive_to_record(det, frames, cap=40):
 
 
 class TestAnchorPrior(unittest.TestCase):
-    """anchor_prior: 预扫已确认 HUD 锚点 -> 跳过 WAIT 滑动窗口共识直接进 CALIBRATE。"""
+    """anchor_prior: 先验来自预扫, 但需确认先验附近确有 HUD 图标才开局
+    (转场/菜单帧无 HUD 时不得在非 HUD 帧上建基线)。"""
 
     def _detector(self, d, prior=None):
         det = sd.StreamingDetector(
@@ -177,21 +178,37 @@ class TestAnchorPrior(unittest.TestCase):
         det.budget = 6
         return det
 
-    def test_skips_wait_and_starts_match_on_first_feed(self):
+    def test_waits_until_hud_confirmed_before_match_start(self):
+        """无 HUD 帧(纯背景)不得开局; 出现 HUD 并稳定 wait_min_frames 帧才开局。"""
         prior = {"x": 400, "y": 400, "w": 45, "h": 41, "scale": 1.0}
         with tempfile.TemporaryDirectory() as d:
             det = self._detector(d, prior)
-            det.feed(_pasted_frame(400, 400), "frame_00_00.0.jpg")
+            blank = np.full((1080, 1920, 3), 40, dtype=np.uint8)
+            for i in range(6):
+                det.feed(blank, f"frame_00_0{i}.0.jpg")
+            self.assertEqual(det.state, "WAIT_ANCHOR")
+            self.assertEqual(det.match_no, 0)
+            for i in range(det.wait_min_frames):
+                det.feed(_pasted_frame(400, 400), f"frame_00_0{i + 6}.0.jpg")
             self.assertNotEqual(det.state, "WAIT_ANCHOR")
             self.assertEqual(det.match_no, 1)
             match_dir = os.path.join(d, "frames", "BV1Uu8z6eEVM", "match_1")
             self.assertTrue(os.path.isdir(match_dir))
 
-    def test_reaches_record_without_waiting_for_stable_anchor(self):
+    def test_starts_match_once_hud_confirmed(self):
         prior = {"x": 400, "y": 400, "w": 45, "h": 41, "scale": 1.0}
         with tempfile.TemporaryDirectory() as d:
             det = self._detector(d, prior)
-            for i in range(det.budget):
+            for i in range(det.wait_min_frames):
+                det.feed(_pasted_frame(400, 400), f"frame_00_0{i}.0.jpg")
+            self.assertNotEqual(det.state, "WAIT_ANCHOR")
+            self.assertEqual(det.match_no, 1)
+
+    def test_reaches_record_after_confirmed_and_budget(self):
+        prior = {"x": 400, "y": 400, "w": 45, "h": 41, "scale": 1.0}
+        with tempfile.TemporaryDirectory() as d:
+            det = self._detector(d, prior)
+            for i in range(det.wait_min_frames + det.budget):
                 det.feed(_pasted_frame(400, 400), f"frame_00_0{i}.0.jpg")
             self.assertEqual(det.state, "RECORD")
             self.assertEqual(det.match_no, 1)
@@ -201,6 +218,8 @@ class TestAnchorPrior(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             det = self._detector(d, prior)
             det._gens_tracker = _ScriptedGens([5] * 20)
+            for i in range(det.wait_min_frames):
+                det.feed(_pasted_frame(400, 400), f"frame_00_0{i}.0.jpg")
             for i in range(det.budget):
                 det.feed(_pasted_frame(400, 400), f"frame_00_0{i}.0.jpg")
             r = det.feed(_pasted_frame(400, 400), "frame_00_10.0.jpg")

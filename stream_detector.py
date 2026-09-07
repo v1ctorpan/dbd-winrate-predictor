@@ -100,9 +100,24 @@ class StreamingDetector:
         self._frame_dir = None
         self._calib = []
         self._wait_cands = []
+        self._prior_hits = []
         self._slot_win = []
         self._slot_idx = 0
         self._slot_try = -1
+
+    def _anchor_plausible(self, frame, anchor):
+        """锚点须让关键 HUD 区域完整落在帧内(伪检出常导致越界空 crop)。"""
+        fh, fw = frame.shape[:2]
+        resolved = hud_regions.resolve_regions(self.cfg, anchor)
+        for key in ("survivor_p1", "survivor_p2", "survivor_p3", "survivor_p4",
+                    "gens_row"):
+            b = resolved.get(key)
+            if b is None:
+                return False
+            if (b["x0"] < 0 or b["y0"] < 0 or b["x1"] > fw or b["y1"] > fh
+                    or b["x1"] <= b["x0"] or b["y1"] <= b["y0"]):
+                return False
+        return True
 
     def _wait_anchor(self, frame):
         """WAIT 状态锚点判定: 跨帧滑动窗口共识。
@@ -135,17 +150,38 @@ class StreamingDetector:
         best = max(stable, key=lambda cl: (len(cl["frames"]), cl["scale"]))
         rep = max(best["members"], key=lambda m: m["score"])
         x0, y0, x1, y1 = rep["box"]
-        return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
-                "score": rep["score"], "scale": rep["scale"]}
+        anchor = {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
+                  "score": rep["score"], "scale": rep["scale"]}
+        if not self._anchor_plausible(frame, anchor):
+            return None
+        return anchor
+
+    def _wait_prior(self, frame):
+        """带先验的 WAIT: 不立即开局, 先确认先验附近确有 HUD 图标。
+
+        anchor_prior(来自预扫)位置可信, 但本局可能尚未开始(转场/菜单无 HUD);
+        若直接开局会把 CALIBRATE 建在非 HUD 帧上(基线全错)。须在窗口内出现
+        >= wait_min_frames 次 detect_anchor(prior) 命中才开局。
+        也顺带排除转场段其他稳定图形(如 BV1QUt766Etg (458,797)@1.3 假锚点)。
+        """
+        px, py = self.anchor_prior["x"], self.anchor_prior["y"]
+        cur = hud_anchor.detect_anchor(frame, self.tpl, prior=(px, py))
+        self._prior_hits.append(cur)
+        if len(self._prior_hits) > self.wait_window:
+            self._prior_hits.pop(0)
+        if cur is not None and sum(a is not None for a in self._prior_hits) >= self.wait_min_frames:
+            return cur
+        return None
 
     def feed(self, frame, fname):
         if self.state == "WAIT_ANCHOR":
             if self.anchor_prior is not None:
-                anchor = self.anchor_prior
+                anchor = self._wait_prior(frame)
             else:
                 anchor = self._wait_anchor(frame)
             if anchor is None:
                 return None
+            self._prior_hits = []
             self.match_no += 1
             self._frame_dir = os.path.join(self.frames_root, self.bvid,
                                            f"match_{self.match_no}")
@@ -294,6 +330,7 @@ class StreamingDetector:
         self._hook_persist.reset()
         self.state = "CALIBRATE"
         self._reset_slot_calib()
+        self._prior_hits = []
         return {"match_end": self.match_no - 1,
                 "csv": os.path.join(self.report_root, self.bvid,
                                     f"match_{self.match_no - 1}", "detect_report.csv")}

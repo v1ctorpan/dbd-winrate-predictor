@@ -325,6 +325,30 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 **正确性验证**：ds=0.25/0.35 曾致漏检回退；最终 ds=0.4 全量真实帧回归（prescan BV1Uu/BV16 锚点/边界、stream WAIT/换局/槽位、hook/gens 真值）全部通过，84 tests OK。
 
+### 3.16 新视频 BV1QUt766Etg 验证 + 鲁棒性修复 + 并行产线（2026-09-07）
+
+**背景**：用新视频 BV1QUt766Etg（1080p30，21.4min，641.8MB，`picture/raw_videos/` gitignore）验证 10s 预扫与检测，暴露一系列 bug 并修复；随后实现 match 级多进程产线提速。
+
+**Bug 修复（TDD 各带回归测试）**：
+- `gens_counter` 越界/空 crop 崩溃：伪锚点使 `gens_row` 相对坐标算出负 x → 空 crop → `cvtColor` 崩。加 `_valid_crop` 守卫（越界返回 None），`count_gens`/`GensTracker.update` 均判无 HUD。`test_gens_counter.TestGensCounterOutOfFrame`。
+- 同源问题也出现在状态识别路径：`make_report.classify`（空 crop→unknown）、`build_opening_refs`（返回空 healthy）、`pick_opening_frame`（跳过越界 crop 帧）。
+- WAIT 可能锁到"区域内稳定但非 HUD"的伪锚点（本片转场段 `(458,797)@1.3` 稳定多帧被锁）→ CALIBRATE 建在非 HUD 帧上，第二局全程 unknown/gens 0。修复：`StreamingDetector` 新增 `_anchor_plausible`（锚点须使 4 头像+gens 区域落在帧内）与**确认式 WAIT `_wait_prior`**（给 anchor_prior 时先确认先验附近确有 HUD 图标 ≥wait_min_frames 帧才开局）。`test_waits_until_hud_confirmed_before_match_start` 等。
+
+**prescan 改进（针对本片两类问题）**：
+- **锚点共识改为"全候选跨帧"**：原逐样本取单帧最高分，被常驻高分伪匹配（本片左缘 x≈10 scale1.1，score 0.74–0.80）压过真实 HUD → anchor_ratio 0.40/不置信。`_consensus_candidates` 按不同帧支持数选主簇 → 本片 **0.403→0.705，anchor_ok=true**。
+- **头像骤变切局规则**：残局 gens 恒 0/None 不再回 5 时旧 gens 规则漏判/滞后（边界被推到 950s，真值 ~630s）。新增"连续 ≥2 样本 4 头像 NCC 骤降 = 旧局结束"边界，有头像骤变时优先于 gens 回 5（避免残局后期伪 5 多切）。本片边界 **950→630**。`prescan._avatar_boundaries` + `TestAvatarBoundary`。
+
+**并行产线（`run_pipeline.run_video_parallel`，CLI `--prescan --parallel`）**：
+- 预扫分段后，**每个对局一个独立进程**从本局起始检测；第二局起在转场后用真实 HUD 重建基线（顺带修复整片 force 切局把基线建在转场帧的问题）。
+- 解码改顺序读取按间隔取样（`_iter_window_frames`，免每帧 seek ~30x）。
+- 落盘后按 `min_frames`（默认 30）过滤过短局，避免 montage 抖动产生的 4 帧垃圾段入 dataset。
+- 单局/锚点不可信自动回退 `run_video_prescan` 原路径。
+- 实测 BV1QUt766Etg 全流程 **255s ≈ 4min15s**（预扫 ~50s + 两段并行 ~3.5min），相比旧估算 60–90min 大幅提速。
+
+**BV1QUt766Etg 检测结果（dataset 现有 4 行 label=-1，保留待后续标注）**：
+- match_1 11.0–629.5s(1238 帧)：第一局，健康/受伤演化，gens 5→4→2→1→0 ✓
+- match_2 680.5–844.5s(329)/ match_3 845.0–866.5s(44)/ match_4 867.0–1286.5s(840)：680s 后**状态可读、无坏段**（修复前全 unknown+gens0）；845/867s 处 montage 剪辑导致 HUD 短暂消失而分段（本片非连续单局，同 BV1aat 情形）。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）

@@ -85,6 +85,8 @@ def build_refs(scale):
 
 
 def classify(crop, slot, refs, icon_tpl=None):
+    if crop is None or crop.size == 0:
+        return "unknown"
     h, w = crop.shape[:2]
 
     def fit(img):
@@ -167,7 +169,10 @@ def build_opening_refs(frame, resolved):
     healthy = []
     for i in range(1, 5):
         b = resolved[f"survivor_p{i}"]
-        healthy.append(frame[b["y0"]:b["y1"], b["x0"]:b["x1"]])
+        crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+        if crop.size == 0:
+            return {"healthy": []}
+        healthy.append(crop)
     return {"healthy": healthy}
 
 
@@ -190,6 +195,8 @@ def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8,
         resolved = hud_regions.resolve_regions(cfg, anchor)
         crops = [frame[r["y0"]:r["y1"], r["x0"]:r["x1"]]
                  for r in [resolved[f"survivor_p{i}"] for i in range(1, 5)]]
+        if any(c.size == 0 for c in crops):
+            continue
         total = 0
         nxt = k + 1
         if nxt >= len(names):
@@ -199,11 +206,17 @@ def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8,
             return frame, anchor, resolved
         anchor_next = get_anchor(frame_next, tpl) or anchor
         resolved_next = hud_regions.resolve_regions(cfg, anchor_next)
+        valid = True
         for i in range(4):
             b = resolved_next[f"survivor_p{i + 1}"]
             cur = frame_next[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+            if cur.size == 0:
+                valid = False
+                break
             h, w = cur.shape[:2]
             total += state_recognizer.ncc(crops[i], cv2.resize(cur, (w, h)))
+        if not valid:
+            continue
         if total / 4.0 >= 0.7:
             return frame, anchor, resolved
         anchor0 = anchor

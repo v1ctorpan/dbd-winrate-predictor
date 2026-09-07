@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 import queue
+import shutil
+import tempfile
 import threading
 
 import cv2
@@ -210,6 +212,121 @@ def _iter_video_timed(video, interval, sample=None):
     cap.release()
 
 
+def _iter_window_frames(video, t0, t1, interval):
+    """顺序解码 [t0, t1) 窗口, 每 interval 秒取一帧(免每帧 seek, 快 ~30x)。"""
+    cap = cv2.VideoCapture(video)
+    if not cap.isOpened():
+        raise RuntimeError(f"cannot open {video}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    step = max(1, int(round(interval * fps)))
+    cap.set(cv2.CAP_PROP_POS_MSEC, int(t0 * 1000))
+    idx = 0
+    t = t0
+    while t < t1 - 1e-9:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if idx % step == 0:
+            yield frame, frame_name(t) + ".jpg"
+            t += interval
+        idx += 1
+    cap.release()
+
+
+def _segment_worker(args):
+    """单个对局分片 worker(独立进程): 用预扫锚点做"确认式 WAIT"(HUD 真实出现才
+    CALIBRATE), 避免转场帧建基线。返回 (seg_no, match_dirs)。"""
+    (video, bvid, seg_no, start, end, interval, work_root, frames_scratch,
+     anchor_prior) = args
+    sub_bvid = f"{bvid}_s{seg_no}"
+    det = sd.StreamingDetector(sub_bvid,
+                               report_root=os.path.join(work_root, "report"),
+                               frames_root=frames_scratch, hook_names=[bvid],
+                               anchor_prior=anchor_prior)
+    for frame, fname in _iter_window_frames(video, start, end, interval):
+        det.feed(frame, fname)
+    det.finish()
+    src = os.path.join(work_root, "report", sub_bvid)
+    matches = []
+    if os.path.isdir(src):
+        for name in sorted(os.listdir(src)):
+            if name.startswith("match_"):
+                csvp = os.path.join(src, name, "detect_report.csv")
+                if os.path.exists(csvp):
+                    matches.append(int(name.split("_")[1]))
+    return seg_no, sorted(matches)
+
+
+def _count_csv_rows(path):
+    import csv as _csv
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return sum(1 for _ in _csv.reader(f)) - 1
+
+
+def run_video_parallel(video, bvid, interval=0.5, prescan_interval=prescan.DEFAULT_INTERVAL,
+                       videos=DATASET, report_root=None, frames_root=None,
+                       meta=None, max_workers=None, anchor_min_ratio=ANCHOR_MIN_RATIO,
+                       min_frames=30):
+    """多局视频提速入口: 预扫分段后, 每个对局一个独立进程从本局起始检测。
+
+    与 run_video_prescan(整片单检测器 + force_new_match)相比:
+    - 各局独立 WAIT/CALIBRATE, 第二局起在转场后重建健康基线, 更准确;
+    - 多局并行(进程级)显著提速; 解码顺序读取免每帧 seek。
+    单局或锚点不可信时回退 run_video_prescan 原路径。
+    """
+    report_root = report_root or os.path.join(BASE, "report", bvid)
+    frames_root = frames_root or PICTURE
+    duration = _video_duration(video)
+    pre = prescan.run_prescan(video, interval=prescan_interval)
+    plan = plan_prescan(pre, duration, anchor_min_ratio=anchor_min_ratio)
+    report_path = write_prescan_report(report_root, bvid, pre, plan)
+    if plan["single"] or not plan["anchor_ok"]:
+        return run_video_prescan(video, bvid, interval=interval, videos=videos,
+                                 report_root=report_root, frames_root=frames_root,
+                                 meta=meta)
+
+    import multiprocessing as mp
+    segments = plan["segments"]
+    anchor_prior = plan["anchor"]
+    work_root = tempfile.mkdtemp(prefix="rppar_")
+    frames_scratch = tempfile.mkdtemp(prefix="rpfrm_")
+    tasks = [(video, bvid, i, s, e, interval, work_root, frames_scratch, anchor_prior)
+             for i, (s, e) in enumerate(segments)]
+    nproc = max_workers or min(len(tasks), 16)
+    try:
+        with mp.Pool(processes=nproc) as pool:
+            results = pool.map(_segment_worker, tasks)
+    except Exception:
+        shutil.rmtree(work_root, ignore_errors=True)
+        shutil.rmtree(frames_scratch, ignore_errors=True)
+        raise
+    results.sort(key=lambda r: r[0])
+
+    n_rec = 0
+    match_no = 1
+    dropped = []
+    for seg_no, local_matches in results:
+        src = os.path.join(work_root, "report", f"{bvid}_s{seg_no}")
+        for lm in local_matches:
+            csv_src = os.path.join(src, f"match_{lm}", "detect_report.csv")
+            if _count_csv_rows(csv_src) < min_frames:
+                dropped.append((seg_no, lm))
+                continue
+            csv_dst_dir = os.path.join(report_root, bvid, f"match_{match_no}")
+            os.makedirs(csv_dst_dir, exist_ok=True)
+            shutil.copy2(csv_src, os.path.join(csv_dst_dir, "detect_report.csv"))
+            n_rec += _encode_match(bvid, report_root, match_no, videos, meta=meta)
+            match_no += 1
+    shutil.rmtree(work_root, ignore_errors=True)
+    shutil.rmtree(frames_scratch, ignore_errors=True)
+    return {"matches": match_no - 1, "records": n_rec, "closed": list(range(1, match_no)),
+            "dropped_short": dropped,
+            "prescan": {"single": plan["single"], "anchor": plan["anchor"],
+                        "anchor_ratio": plan["anchor_ratio"],
+                        "boundaries": plan["boundaries"]},
+            "prescan_report": report_path}
+
+
 def plan_prescan(pre, duration, anchor_min_ratio=ANCHOR_MIN_RATIO):
     """由预扫结果生成执行计划。
 
@@ -321,6 +438,8 @@ def main():
     ap.add_argument("--budget", type=int, default=12)
     ap.add_argument("--prescan", action="store_true", help="mp4 源: 先 10s 预扫确认锚点/判多局再全量跑")
     ap.add_argument("--prescan-interval", type=float, default=prescan.DEFAULT_INTERVAL)
+    ap.add_argument("--parallel", action="store_true",
+                    help="多局 mp4: 每局一个独立进程并行检测(单局/锚点不可信自动回退)")
     ap.add_argument("--title", default=None, help="视频标题(缺省自动读 raw_videos/{bvid}.info.json)")
     ap.add_argument("--url", default=None, help="视频 url(缺省 canonical 或 info.json webpage_url)")
     args = ap.parse_args()
@@ -328,6 +447,10 @@ def main():
     if os.path.isdir(args.source):
         stats = run_frames_dir(args.source, args.bvid, sample=args.sample,
                                videos=args.videos, meta=meta)
+    elif args.prescan and args.parallel:
+        stats = run_video_parallel(args.source, args.bvid, interval=args.interval,
+                                   prescan_interval=args.prescan_interval,
+                                   videos=args.videos, meta=meta)
     elif args.prescan:
         stats = run_video_prescan(args.source, args.bvid, interval=args.interval,
                                   prescan_interval=args.prescan_interval,
