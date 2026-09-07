@@ -171,10 +171,17 @@ def build_opening_refs(frame, resolved):
     return {"healthy": healthy}
 
 
-def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8):
+def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8,
+                       frames=None):
+    """frames 可选: {basename: frame} 预加载映射, 命中则避免重复读盘。"""
+    def _load(name):
+        if frames is not None and name in frames:
+            return frames[name]
+        return cv2.imread(os.path.join(frame_dir, name))
+
     anchor0 = None
     for k in range(min(max_probe, len(names))):
-        frame = cv2.imread(os.path.join(frame_dir, names[k]))
+        frame = _load(names[k])
         if frame is None:
             continue
         anchor = get_anchor(frame, tpl)
@@ -187,7 +194,7 @@ def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8):
         nxt = k + 1
         if nxt >= len(names):
             return frame, anchor, resolved
-        frame_next = cv2.imread(os.path.join(frame_dir, names[nxt]))
+        frame_next = _load(names[nxt])
         if frame_next is None:
             return frame, anchor, resolved
         anchor_next = get_anchor(frame_next, tpl) or anchor
@@ -202,7 +209,7 @@ def pick_opening_frame(frame_dir, names, get_anchor, tpl, cfg, max_probe=8):
         anchor0 = anchor
     if anchor0 is None:
         return None, None, None
-    frame = cv2.imread(os.path.join(frame_dir, names[0]))
+    frame = _load(names[0])
     return frame, anchor0, hud_regions.resolve_regions(cfg, anchor0)
 
 

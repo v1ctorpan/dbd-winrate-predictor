@@ -297,16 +297,33 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - `StreamingDetector` 新参数：`anchor_prior`（预扫锚点，跳过 WAIT 直入 CALIBRATE）、`detect_match_end`（默认 True；预扫判单局时置 False 以彻底避免假切，BV1aat 残留 ~290s 假界即由此压掉）、`force_new_match`（RECORD 态强制开新局，供预扫边界使用；抽取 `_start_new_match` 复用换局分支）。新测试 `TestAnchorPrior` 3 项 + `TestPrescanDrivenEnd` 2 项（全过）。
 - `run_pipeline.py` 新增 `run_video_prescan`：预扫 → `plan_prescan`（anchor_ok / single / boundaries / segments）→ 落盘 `report/{bvid}/prescan.json` 预检报告 → 带 `anchor_prior` 全量跑；单局 `detect_match_end=False`，多局在预扫边界处 `force_new_match`（段内 RECORD 0/None 换局仍兜底，多出段照常写回）；锚点不可信时回退旧 WAIT 产线 `run_video`。CLI 加 `--prescan` / `--prescan-interval`。新测试 `tests/test_pipeline_prescan.py` 8 项 PASS（plan/报告/锚点回退/强制切段均 mock 验证）。
 
-**验证**：`tests/test_prescan.py` 11 PASS、`tests/test_pipeline_prescan.py` 8 PASS、`test_stream_detector.py` 相关新类 PASS；此前最后一次全量 = 71 passed + 114 subtests（含 prescan 真帧集成、早于 anchor_prior/detect_match_end/force/产线新增）。**本次按用户要求未重跑全量**（见注意事项）。
+**验证**：`tests/test_prescan.py` 11 PASS、`tests/test_pipeline_prescan.py` 8 PASS、`test_stream_detector.py` 相关新类 PASS；此后 2026-09-07 已跑全量回归 **84 tests PASS**（~583s，覆盖 §3.14 新增与既有路径，见注意事项）。
 
 **注意事项 / 需要留意的点**：
-1. ⚠️ **全量回归未跑**（用户要求先推）——新增 `TestAnchorPrior`/`TestPrescanDrivenEnd`/`test_pipeline_prescan` 均为定向跑绿，接续前请先 `python -m pytest tests/` 全量确认。
-2. BV1aat 单局 dataset 合并（4 行 → 1 行，截 ~405.5s，label=-1）仍挂起，待用户确认后再做；勿全量重跑 BV1aat。
+1. ✅ **全量回归已跑**（2026-09-07，base python `python -m unittest discover -s tests`）：**84 tests PASS**（~583s，含 §3.14 新增 `TestAnchorPrior`/`TestPrescanDrivenEnd`/`test_pipeline_prescan` 及既有路径），旧路径未受影响。
+2. ✅ BV1aat 单局 dataset 合并（4 行 → 1 行，截 ~405.5s，label=-1）已完成（2026-09-07，离线拼接 match1~4 features，796 帧；未重跑 BV1aat）。
 3. prescan 阈值现为硬编码常量（`PORTRAIT_NCC_THR 0.8`=用户定、`PORTRAIT_MIN_STD 8`、`MIN_ANCHOR_SCALE 0.9`、portrait 有效对 ≥2、`ANCHOR_MIN_RATIO 0.5`），样本多了再调。
 4. 同值+单样本断档不再视为候选 → 极少见「5→5 且两局间仅 1 不可读帧」会被预扫漏切，交给段内 RECORD 兜底。
 5. `asset/icon_executed.png`（2026-09-06 生成，代码中无引用）未加入提交，如需 executed 状态（§6 待办 7）再纳入。
 6. §3.13 所述 `run_video` 返回 `closed=[]` 的统计口径缺陷仍在（本提交未改）；`run_video_prescan` 按 `_encode_match` 返回值累计，其 records 数可靠。
 7. 旧 `run_video`/`run_frames_dir` 路径与默认参数行为完全不变，既有测试不受影响（设计如此，留给全量回归确认）。
+
+### 3.15 全量 UT 提速 ~10x（583s → 56s，2026-09-07）
+
+**目标**：全量 unittest 从 ~583s 压到 ~1min 内。实测最终 `python -m unittest discover -s tests` = **84 tests / ~56s / OK**（优化前 ~583s）。
+
+**热点根因**：`hud_anchor.find_gen_anchors` 对每帧全图跑 17 尺度 `matchTemplate`（1080p 一帧 ~1.9s），被 prescan 每 10s 采样、WAIT/每帧 detect_anchor 大量调用；测试反复 `imread` 同一批真实帧。
+
+**改动（均为语义等价的性能优化，全量回归为正确性门）**：
+- `hud_anchor.py`：
+  - `detect_anchor(prior=...)` 先验搜索限制在锚点附近 ROI（`_prior_roi` ±96px），不再全图扫 17 尺度（RECORD 每帧路径主获益）。
+  - no-prior 大帧（≥`FAST_SEARCH_MIN_PIXELS`≈1080p）走 `_fast_full_search`：降采样 ds=0.4 粗扫 → 按位置聚类 → 原生分辨率局部精化（pad 24）。只保留 scale≥0.9 候选（WAIT/预扫下游本就丢弃小尺度菜单噪声）。小帧（720p test1）保持原全量路径，结果逐位一致。
+- `calibrator.calibrate_hook_slots`：同一文件原在 4 个 hook 区域循环里被读 4 次，改为每文件只读一次（`frames` 可选入参可传已读内存帧，完全跳过读盘）。
+- `make_report.pick_opening_frame`：新增可选 `frames` 预加载映射避免重复 `imread`。
+- `stream_detector._finalize_calibration`：校准帧本在内存（`_calib`），传内存帧给上述两函数，省掉写盘后读回的往返。
+- `tests/test_stream_detector.py`：`_sorted_frames()` 模块级缓存（真实帧在各测试间只读不 mutate）。
+
+**正确性验证**：ds=0.25/0.35 曾致漏检回退；最终 ds=0.4 全量真实帧回归（prescan BV1Uu/BV16 锚点/边界、stream WAIT/换局/槽位、hook/gens 真值）全部通过，84 tests OK。
 
 ## 4. 测试数据与真值
 
@@ -365,8 +382,8 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 **2026-09-06（本提交，已推送）**：
 - ✅ 换局误切修复：孤立单帧 0 不再切局（`MIN_END_ZERO_RUN=2`，§3.14）+ 回归。
 - ✅ 10s 预扫优化流程全链路（`prescan.py` + `StreamingDetector` anchor_prior/detect_match_end/force_new_match + `run_pipeline.run_video_prescan` + `--prescan`，§3.14）：抽样确认 HUD 锚点 & 双条件（gens 异常跳变 ∩ 4 头像 NCC<0.8）判多局；单局关自动切、多局按预扫边界强切、锚点不可信回退旧产线。定向测试全绿；全量回归待跑。
-- ⏳ BV1aat 单局 dataset 合并（4 行→1 行 ~405.5s，label=-1）挂起待确认；勿全量重跑。
-- ⏳ 全量回归跑一次确认 §3.14 新增不影响旧路径（建议接续第一步做）。
+- ✅ BV1aat 单局 dataset 合并（4 行→1 行 ~405.5s，label=-1）已完成（2026-09-07，离线拼接 match1~4，796 帧；未重跑 BV1aat）。
+- ✅ 全量回归跑一次确认 §3.14 新增不影响旧路径（2026-09-07：84 tests PASS，~583s；同日 §3.15 提速后同套 84 tests ~56s PASS）。
 1. ✅（已修）gens 阈值误判 `GEN_ICON_THR 0.70→0.55`（跨视频判隔证据见 3.8-A）+ 回归测试。
 2. ✅（已修）hooks 开局空槽位 → 前向滚动重校准（3.8-B）+ 回归测试。
 3. ✅（已修）hooks overlay 误检 → `count_hooks` 防"连通亮带贯穿两槽"（3.9）+ `TestCountHooksAntiBlob`。
@@ -375,7 +392,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 6. ✅（已修）gens 260~269s 误读 0（用户真值 =4，画面正常）→ 根因：单帧伪 0 + prev=0 单调锁死；`LOW_ICON_THR=0.45` + 递减守卫仅限 1..5。回归测试 + 全量 51 PASS，见 §3.11。
 7. ⏳ 状态补充：executed≈dead（Mori 处决画面/结算）。
 8. ⏳ 上述收敛后：BV1pht96fEjN 全片（14.3min）端到端 `run_pipeline.py`（~55min）→ match_N/CSV + `dataset/videos.jsonl` 的 `BV1pht96fEjN:N` 记录；校验数据行（features 长度、id、label=-1）；更新 `docs/dataset_format.md`。
-   - ✅（已完成，先行）新视频 BV1aatX6uE3C（7.0min 剪辑向）端到端验证：冒烟暴露 gens 帧间沿用 scale 抖动崩溃并修复（§3.13）；全片 ~21min 实跑产出 4 个自动分段 match，追加 `BV1aatX6uE3C:1~4` 至 `dataset/videos.jsonl`（现共 6 行，label=-1，features 30 维校验合法）。结论：检测器对剪辑向视频可分长段跟踪（match_3/4 为 2min/6min 连续段，含 gens 演化与受伤状态），但含零散 healthy/gens5 段，非单局数据，标签扩充仍以完整单局视频为准。
+   - ✅（已完成，先行）新视频 BV1aatX6uE3C（7.0min 剪辑向）端到端验证：冒烟暴露 gens 帧间沿用 scale 抖动崩溃并修复（§3.13）；全片 ~21min 实跑产出 4 个自动分段 match，追加 `BV1aatX6uE3C:1~4` 至 `dataset/videos.jsonl`（当时共 6 行，label=-1，features 30 维校验合法）。结论：检测器对剪辑向视频可分长段跟踪（match_3/4 为 2min/6min 连续段，含 gens 演化与受伤状态），但含零散 healthy/gens5 段，非单局数据，标签扩充仍以完整单局视频为准。2026-09-07 已离线合并为单局 record（现共 3 行）。
 
 **后续规划（已定稿未实现）**：
 9. 实现对局序列数据管道（设计+计划已完成，见 3.5）：`dataset_encoder.py` → `match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py`

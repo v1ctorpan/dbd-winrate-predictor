@@ -14,9 +14,14 @@ SRC = os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
 GEN = os.path.join(BASE, "picture", "gen.jpg")
 
 
+_SORTED_CACHE = None
+
 def _sorted_frames():
-    names = sorted(f for f in os.listdir(SRC) if f.endswith(".jpg"))
-    return [(cv2.imread(os.path.join(SRC, f)), f) for f in names]
+    global _SORTED_CACHE
+    if _SORTED_CACHE is None:
+        names = sorted(f for f in os.listdir(SRC) if f.endswith(".jpg"))
+        _SORTED_CACHE = [(cv2.imread(os.path.join(SRC, f)), f) for f in names]
+    return _SORTED_CACHE
 
 
 def _pasted_frame(x, y, scale=1.0):

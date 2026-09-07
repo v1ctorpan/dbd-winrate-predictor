@@ -182,10 +182,12 @@ class StreamingDetector:
 
     def _finalize_calibration(self):
         names = [fn for fn, _ in self._calib]
+        calib_map = {fn: frame for fn, frame in self._calib}
         get_anchor = (lambda fr, tpl: hud_anchor.detect_anchor(
             fr, tpl, prior=(self._anchor["x"], self._anchor["y"])))
         opening, anchor, resolved = make_report.pick_opening_frame(
-            self._frame_dir, names, get_anchor, self.tpl, self.cfg)
+            self._frame_dir, names, get_anchor, self.tpl, self.cfg,
+            frames=calib_map)
         if anchor is None:
             anchor = self._anchor
             resolved = hud_regions.resolve_regions(self.cfg, anchor)
@@ -199,7 +201,9 @@ class StreamingDetector:
         refs["healthy"] = make_report.build_opening_refs(opening, resolved)["healthy"]
         self._refs = refs
         paths = [os.path.join(self._frame_dir, fn) for fn, _ in self._calib]
-        self._slots = calibrator.calibrate_hook_slots(paths, resolved)
+        calib_frames = [fr for _, fr in self._calib]
+        self._slots = calibrator.calibrate_hook_slots(paths, resolved,
+                                                      frames=calib_frames)
         self.state = "RECORD"
         # 回放攒下的校准帧(未计入 rows), 确保不漏帧
         for fn, frame in self._calib:

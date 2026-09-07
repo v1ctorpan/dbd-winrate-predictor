@@ -75,23 +75,31 @@ def calibrate_video(frame_paths, gen_tpl_path, cfg_path, refs_dir, pos_tol=15, m
 def calibrate_hook_slots(frame_paths, resolved, margin=hook_counter.MARGIN,
                          min_run=hook_counter.MIN_LINE_RUN,
                          top_frac=hook_counter.TOP_FRAC, bottom_frac=hook_counter.BOTTOM_FRAC,
-                         min_gap=4, max_gap=12, min_frames=2):
+                         min_gap=4, max_gap=12, min_frames=2, frames=None):
     """通过"同帧共现"找槽位: 真实钩线成对出现(两槽位常同时亮起),
     而区域内的静态装饰线(如头像轮廓)独立出现, 参与共现次数低, 会被排除。
 
     跨帧支持度: 候选 (a,b) 对必须在 >= min_frames 个不同帧中都出现才被采纳,
-    防止开局 overlay 闪现(1~2 帧的宽亮带)被误锁为槽位。"""
+    防止开局 overlay 闪现(1~2 帧的宽亮带)被误锁为槽位。
+
+    frames 可选: 与 frame_paths 等长的已读入帧; 提供时跳过重复读盘。
+    """
     pair_frames = {}
     cols_by_item = {}
-    for i in range(1, 5):
-        b = resolved[f"hook_p{i}"]
-        h = b["y1"] - b["y0"]
-        min_top = int(h * top_frac)
-        min_bottom = int(h * bottom_frac)
-        for fp in frame_paths:
-            g = cv2.imread(fp)
-            if g.ndim == 3:
-                g = cv2.cvtColor(g, cv2.COLOR_BGR2GRAY)
+    if frames is not None:
+        grays = dict(zip(frame_paths, frames))
+    else:
+        grays = {fp: cv2.imread(fp) for fp in frame_paths}
+    for fp, g in grays.items():
+        if g is None:
+            continue
+        if g.ndim == 3:
+            g = cv2.cvtColor(g, cv2.COLOR_BGR2GRAY)
+        for i in range(1, 5):
+            b = resolved[f"hook_p{i}"]
+            h = b["y1"] - b["y0"]
+            min_top = int(h * top_frac)
+            min_bottom = int(h * bottom_frac)
             crop = g[b["y0"]:b["y1"], max(0, b["x0"] - 2):min(g.shape[1], b["x1"] + 2)]
             colmax = np.array([float(crop[:, x].max()) for x in range(crop.shape[1])])
             bg = float(np.median(colmax))
