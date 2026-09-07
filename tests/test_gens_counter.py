@@ -73,5 +73,33 @@ class TestGensCounter(unittest.TestCase):
                 self.assertEqual(got, expected)
 
 
+class TestGensCounterOutOfFrame(unittest.TestCase):
+    """回归: BV1QUt766Etg 预扫中 find_gen_anchors 伪检出左上角锚点 (10,178)@1.1,
+    gens_row 相对坐标 x0=-29 换算得负 x, numpy 切片返回空 crop 使 cvtColor 崩溃。
+    越界/空 crop 应判 None(无 HUD)而不是抛异常。"""
+
+    def _frame(self):
+        frame = cv2.imread(os.path.join(BV1, "frame_00_30.0.jpg"))
+        self.assertIsNotNone(frame)
+        return frame
+
+    def _oob_resolved(self):
+        return {"gens_row": {"x0": -22, "y0": 150, "x1": 52, "y1": 190}}
+
+    def test_count_gens_oob_returns_none(self):
+        got = gens_counter.count_gens(
+            self._frame(), self._oob_resolved(), self.refs_or_refs(), anchor={"scale": 1.1})
+        self.assertIsNone(got)
+
+    def test_tracker_oob_returns_none(self):
+        tracker = gens_counter.GensTracker(self.refs_or_refs())
+        got = tracker.update(self._frame(), self._oob_resolved(), {"scale": 1.1})
+        self.assertIsNone(got)
+
+    @staticmethod
+    def refs_or_refs():
+        return gens_counter.load_digit_refs()
+
+
 if __name__ == "__main__":
     unittest.main()

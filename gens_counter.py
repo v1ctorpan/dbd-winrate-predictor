@@ -96,9 +96,21 @@ def _build_refs(resolved, frame_dir, digit_frames, scale):
             refs[digit] = imgs
     return refs
 
+def _valid_crop(frame, b):
+    """region 完全落在帧内才返回裁剪; 越界/负索引(空数组)返回 None。"""
+    fh, fw = frame.shape[:2]
+    x0, y0 = b["x0"], b["y0"]
+    x1, y1 = b["x1"], b["y1"]
+    if x0 < 0 or y0 < 0 or x1 > fw or y1 > fh or x1 <= x0 or y1 <= y0:
+        return None
+    crop = frame[y0:y1, x0:x1]
+    return crop if crop.size > 0 else None
+
 def count_gens(frame, resolved, refs, gen=None, anchor=None, gen_icon_thr=GEN_ICON_THR, digit_thr=DIGIT_THR):
     b = resolved["gens_row"]
-    crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+    crop = _valid_crop(frame, b)
+    if crop is None:
+        return None
     g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
 
     if int((g > 100).sum()) < 20:
@@ -163,7 +175,11 @@ class GensTracker:
     def update(self, frame, resolved, anchor):
         """处理单帧，返回 gens 数字（1-5 / 0 / None）。状态跨帧保留。"""
         b = resolved["gens_row"]
-        crop = frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+        crop = _valid_crop(frame, b)
+        if crop is None:
+            self.prev_digit = None
+            self.prev_crop = None
+            return None
         g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
 
         if int((g > 100).sum()) < 20:

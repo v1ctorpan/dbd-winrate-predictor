@@ -79,6 +79,72 @@ class TestFindBoundaries(unittest.TestCase):
         self.assertEqual(prescan.find_boundaries(_samples(gens, sims)), [6, 12])
 
 
+class TestAvatarBoundary(unittest.TestCase):
+    """头像区骤变 = 旧局结束(换人/结算)。BV1QUt766Etg 型: gens 修完后残局
+    长时间 0, gens 不再回 5, 旧 gens 切局规则失效/滞后; 应以头像内容骤变切局。"""
+
+    def _frames(self, n):
+        return [[0]] * 4
+
+    def test_sustained_avatar_change_is_boundary(self):
+        """稳定 HUD 后连续 >=2 样本头像骤变(sim 低) -> 切在首次骤变处(旧局结束)。"""
+        gens = [5, 4, 3, 2, 0, 0, 0, 0, 0, 0, 0]
+        sims = [None] + [0.9, 0.9, 0.85, 0.8, 0.7, 0.1, 0.05, 0.9, 0.8, 0.85]
+        samples = []
+        for i, g in enumerate(gens):
+            samples.append(prescan.Sample(
+                t=float(i), fname=f"f{i}", gens=g, portraits=self._frames(1),
+                sim_prev=sims[i]))
+        got = prescan.find_boundaries(samples)
+        self.assertEqual(got, [6])
+
+    def test_momentary_avatar_dip_is_not_boundary(self):
+        """单样本 sim 跌落(状态变化)后回稳 -> 同局, 不切。"""
+        gens = [5, 4, 3, 3, 3, 3, 3]
+        sims = [None, 0.9, 0.8, 0.2, 0.9, 0.85, 0.8]
+        samples = []
+        for i, g in enumerate(gens):
+            samples.append(prescan.Sample(
+                t=float(i), fname=f"f{i}", gens=g, portraits=self._frames(1),
+                sim_prev=sims[i]))
+        self.assertEqual(prescan.find_boundaries(samples), [])
+
+
+class TestConsensusCandidates(unittest.TestCase):
+    """跨帧全候选共识: 单帧最高分被常驻高分伪匹配(位置乱跳)压过时,
+    真实 HUD 图标(位置稳定、支持帧数最多)仍应被选为共识锚点。"""
+
+    def _real(self, score=0.75):
+        return {"scale": 1.6, "score": score, "box": (213, 804, 269, 855)}
+
+    def _moving_false(self, y, score=0.95):
+        return {"scale": 1.1, "score": score, "box": (10, y, 48, y + 35)}
+
+    def test_stable_real_beats_high_score_moving_false(self):
+        cands_per = []
+        moving_ys = [18, 97, 178, 218, 57]
+        for i in range(8):
+            row = [self._real()]
+            if i >= 3:
+                row.append(self._moving_false(moving_ys[i - 3]))
+            cands_per.append(row)
+        anchor, ratio = prescan._consensus_candidates(cands_per)
+        self.assertIsNotNone(anchor)
+        self.assertAlmostEqual(anchor["x"], 213, delta=5)
+        self.assertAlmostEqual(anchor["y"], 804, delta=5)
+        self.assertAlmostEqual(anchor["scale"], 1.6, delta=0.1)
+        self.assertGreaterEqual(ratio, 0.8)
+
+    def test_second_layout_cluster_not_confused(self):
+        """另一段 HUD 布局(A 换 B)固定位置不同 -> 取支持帧数更多者。"""
+        b = {"scale": 1.2, "score": 0.9, "box": (900, 400, 942, 442)}
+        cands_per = [[self._real()] for _ in range(6)] + [[dict(b)] for _ in range(3)]
+        anchor, ratio = prescan._consensus_candidates(cands_per)
+        self.assertIsNotNone(anchor)
+        self.assertAlmostEqual(anchor["x"], 213, delta=5)
+        self.assertGreaterEqual(ratio, 0.6)
+
+
 class TestPrescanReal(unittest.TestCase):
     """真实帧(10s 抽样目录)端到端: HUD 锚点确认 + 多局判定。"""
 
