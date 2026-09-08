@@ -1,7 +1,7 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
 > 最后更新：2026-09-08
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；多线程产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送；**全量 UT 提速 ~10x（583s→~56s，§3.15）**；Task5 排查修复（gens 阈值/滚动校准/防 overlay/持久化地板/防误锁/误读 0，§3.8~3.12）已推送；**新视频 BV1QUt766Etg（21.4min）验证驱动的鲁棒性修复 + match 级并行产线已完成并推送（§3.16，全量 91 tests ~59s PASS）**：越界/空 crop 守卫、WAIT 锚点可信性确认、prescan 全候选共识与头像骤变切局、`run_video_parallel` 按局多进程（全流程 ~4min）。**BV1pht96fEjN 已按用户真值纠正为单局（§3.18/§3.19，固定锚点隔离重跑，5.5–850.0s，executed 真实命中）**。dataset 现 8 行（BV1Uu/BV16/BV1aat 单局 + BV1QUt 4 局 + BV1pht 单局，均 label=-1 待标注）。剩余：BV1QUt 剪辑/短段数据审阅、gate_ui、序列模型等（见 §6、§3.17~§3.19 注意点）。
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；多线程产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送；**全量 UT 提速 ~10x（583s→~56s，§3.15）**；Task5 排查修复（gens 阈值/滚动校准/防 overlay/持久化地板/防误锁/误读 0，§3.8~3.12）已推送；**新视频 BV1QUt766Etg（21.4min）验证驱动的鲁棒性修复 + match 级并行产线已完成并推送（§3.16，全量 91 tests ~59s PASS）**：越界/空 crop 守卫、WAIT 锚点可信性确认、prescan 全候选共识与头像骤变切局、`run_video_parallel` 按局多进程（全流程 ~4min）。**BV1pht96fEjN 已按用户真值纠正为单局（§3.18/§3.19，固定锚点隔离重跑，5.5–850.0s，executed 真实命中）**。dataset 现 6 行（BV1Uu/BV16/BV1aat 单局 + BV1QUt 2 局 + BV1pht 单局，均 label=-1 待标注）。剩余：BV1QUt 剪辑/短段数据审阅、gate_ui、序列模型等（见 §6、§3.17~§3.19 注意点）。
 
 ## 分支与提交状态（2026-09-08）
 
@@ -345,14 +345,14 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - 单局/锚点不可信自动回退 `run_video_prescan` 原路径。
 - 实测 BV1QUt766Etg 全流程 **255s ≈ 4min15s**（预扫 ~50s + 两段并行 ~3.5min），相比旧估算 60–90min 大幅提速。
 
-**BV1QUt766Etg 检测结果（dataset 现有 4 行 label=-1，保留待后续标注）**：
-- match_1 11.0–629.5s(1238 帧)：第一局，健康/受伤演化，gens 5→4→2→1→0 ✓
-- match_2 680.5–844.5s(329)/ match_3 845.0–866.5s(44)/ match_4 867.0–1286.5s(840)：680s 后**状态可读、无坏段**（修复前全 unknown+gens0）；845/867s 处 montage 剪辑导致 HUD 短暂消失而分段（本片非连续单局，同 BV1aat 情形）。
+**BV1QUt766Etg 检测结果（dataset 现有 2 行 label=-1，保留待后续标注）**：
+- match_1 11.0–629.5s（1243 帧）：第一局，健康/受伤演化，gens 5→4→2→1→0。
+- match_2 675.0–1286.5s（1224 帧）：第二局，内部 montage 转场不再错误切成多个局；状态可读，gens/头像可持续输出。
 
 ### 3.17 注意点 / 接手提示（2026-09-08，显式列出）
 
 1. **运行环境命令**：全量 UT = `python -m unittest discover -s tests`（base Python 3.8.18，~59s）。多局视频全量 = `python run_pipeline.py <mp4> <bvid> --prescan --parallel`（`run_video_parallel`；单局/锚点不可信自动回退旧 `run_video_prescan`）。新视频下载用 dbd env `python -m yt_dlp -f 30080 --write-info-json -c -o "picture/raw_videos/%(id)s.%(ext)s" <url>`（bilibili 需 `--add-header "Referer:https://www.bilibili.com/"` + Chrome UA 防 HTTP 412）。
-2. **BV1QUt766Etg 是剪辑向视频**：680s 后因 montage 剪辑（845/867s HUD 短暂消失）被切成 match_2/3/4，**不是三个独立对局**；其数据当前仅作检测质量验证，不宜直接作为标注训练样本（与 BV1aat 结论一致，训练样本仍应以完整单局视频为准）。dataset 里 4 行 label=-1 保留，后续可人工合并/取舍。
+2. **BV1QUt766Etg 是剪辑向视频**：用户确认真实为两局；当前已按预扫边界 630s 合并为两条记录，仍建议只作检测质量验证，不直接作为训练样本（与 BV1aat 结论一致，训练样本仍应以完整单局视频为准）。
 3. **`run_video_parallel` 的帧不落盘**：worker 把帧写进临时 scratch 后删除（只保留 CSV 入 report + dataset）。如需可视核对帧需另行抽取或改代码（frames_root 参数目前只影响单局回退路径）。
 4. **确认式 WAIT 语义变化**：给 `anchor_prior` 后不再立即开局，须先验附近连续出现 HUD 图标（`wait_min_frames` 帧）才 CALIBRATE——这修掉了"转场帧建基线→整局 unknown"的 bug，但也意味着**开局前无 HUD 的帧不会产生行**（属预期）。
 5. **prescan 头像骤变规则优先级**：当存在"连续 ≥2 样本 4 头像 NCC 骤降"时会丢弃该窗口内 gens 回 5 的伪边界（否则如 BV1QUt 会把第二局开头误切到 950s）。若未来出现"换人不伴随头像骤变"的多局视频，此规则可能漏切——届时需再评估（现由 RECORD 兜底）。
@@ -444,12 +444,12 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ## 6. 待办（下一步）
 
-**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) + BV1pht 真值纠正(§3.19) 均已推送（见 §分支与提交状态）。dataset 现 8 行（BV1Uu/BV16/BV1aat + BV1QUt×4 + BV1pht 单局，新增记录 label=-1）。
+**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) + BV1pht 真值纠正(§3.19) 均已推送（见 §分支与提交状态）。dataset 现 6 行（BV1Uu/BV16/BV1aat + BV1QUt×2 + BV1pht 单局，新增记录 label=-1）。
 
 **已完成（本会话）**：
 - ✅ 全量 UT 提速 583s→~56s（§3.15，84→91 tests 含新回归，~59s）。
 - ✅ BV1aat 单局 dataset 合并（4 行→1 行，796 帧，label=-1；§3.14/§3.15）。
-- ✅ BV1QUt766Etg 验证：预扫崩溃修复（越界空 crop）、锚点全候选共识（anchor_ok 0.40→0.71）、头像骤变切局（边界 950→630）、确认式 WAIT + `_anchor_plausible`（第二局基线 bug 修复）、`run_video_parallel` 按局多进程 + min 帧过滤（全流程 ~4min15s）；dataset 追加 4 局 label=-1（§3.16）。
+- ✅ BV1QUt766Etg 验证：预扫崩溃修复（越界空 crop）、锚点全候选共识（anchor_ok 0.40→0.71）、头像骤变切局（边界 950→630）、确认式 WAIT + `_anchor_plausible`（第二局基线 bug 修复）、`run_video_parallel` 按局多进程 + min 帧过滤（全流程 ~4min）；按用户真值重新跑后保留两局记录（§3.16）。
 
 **下一步（按优先级）**：
 1. ✅ 状态补充：executed≈dead（Mori 处决画面/结算）；报告识别 `executed`，dataset 编码归一 `dead`，保持 30 维。

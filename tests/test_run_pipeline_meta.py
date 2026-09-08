@@ -57,7 +57,8 @@ class TestEncodeMatch(unittest.TestCase):
             self._write_csv(csv_path)
             videos = os.path.join(d, "videos.jsonl")
             meta = {"title": "标题X", "url": "https://www.bilibili.com/video/BV1X"}
-            rp._encode_match("BV1X", report_root, 3, videos, meta=meta)
+            appended = rp._encode_match("BV1X", report_root, 3, videos, meta=meta)
+            self.assertEqual(appended, 1)
             with open(videos, encoding="utf-8") as f:
                 rec = json.loads(f.readline())
             self.assertEqual(rec["id"], "BV1X")

@@ -62,7 +62,8 @@ def _encode_match(bvid, report_root, match_no, videos_path, meta=None):
     meta = dict(meta or {})
     meta["match"] = match_no
     rec = de.encode_csv(csv_path, bvid, label=-1, meta=meta)
-    return de.append_record(videos_path, rec)
+    de.append_record(videos_path, rec)
+    return 1
 
 
 def _resolve_meta(bvid, title=None, url=None):
@@ -242,7 +243,8 @@ def _segment_worker(args):
     det = sd.StreamingDetector(sub_bvid,
                                report_root=os.path.join(work_root, "report"),
                                frames_root=frames_scratch, hook_names=[bvid],
-                               anchor_prior=anchor_prior)
+                               anchor_prior=anchor_prior,
+                               detect_match_end=False)
     for frame, fname in _iter_window_frames(video, start, end, interval):
         det.feed(frame, fname)
     det.finish()
