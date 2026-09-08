@@ -290,17 +290,27 @@ def run_prescan(source, interval=DEFAULT_INTERVAL, max_frames=None,
     refs = gens_counter.load_digit_refs()
     gen = cv2.imread(GEN_TPL)
 
+    cache_encoded = not os.path.isdir(source)
+    sampled_frames = []
     cands_per_frame = []
-    for _t, frame in iter_sample_frames(source, interval=interval, max_frames=max_frames):
+    for t, frame in iter_sample_frames(source, interval=interval, max_frames=max_frames):
+        if cache_encoded:
+            ok, encoded = cv2.imencode(
+                ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if not ok:
+                raise RuntimeError(f"cannot cache prescan frame at t={t:.1f}s")
+            sampled_frames.append((t, encoded))
+        else:
+            sampled_frames.append((t, frame))
         cands_per_frame.append(hud_anchor.find_gen_anchors(frame, tpl))
     consensus, ratio = _consensus_candidates(cands_per_frame)
 
     samples = []
     last_good = None
     last_crops = None
-    for (t, frame), cands in zip(
-            iter_sample_frames(source, interval=interval, max_frames=max_frames),
-            cands_per_frame):
+    for (t, cached), cands in zip(sampled_frames, cands_per_frame):
+        frame = (cv2.imdecode(cached, cv2.IMREAD_COLOR)
+                 if cache_encoded else cached)
         fname = f"t={t:.1f}s"
         gens = None
         portraits = None

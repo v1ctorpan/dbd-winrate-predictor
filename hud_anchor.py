@@ -129,7 +129,14 @@ def _prior_roi(frame, prior, margin=PRIOR_ROI_MARGIN):
     return (x0, y0, x1, y1)
 
 def detect_anchor(frame, template, prior=None, pos_tol=15, snap=2, **kwargs):
+    prior_scale = kwargs.pop("prior_scale", None)
     if prior is not None:
+        if prior_scale is not None and "scales" not in kwargs:
+            kwargs["scales"] = tuple(
+                round(prior_scale + delta, 2)
+                for delta in (-0.2, -0.1, 0.0, 0.1, 0.2)
+                if prior_scale + delta >= 0.4
+            )
         cands = find_gen_anchors(frame, template, roi=_prior_roi(frame, prior), **kwargs)
     else:
         cands = find_gen_anchors(frame, template, **kwargs)

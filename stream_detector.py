@@ -220,7 +220,8 @@ class StreamingDetector:
         names = [fn for fn, _ in self._calib]
         calib_map = {fn: frame for fn, frame in self._calib}
         get_anchor = (lambda fr, tpl: hud_anchor.detect_anchor(
-            fr, tpl, prior=(self._anchor["x"], self._anchor["y"])))
+            fr, tpl, prior=(self._anchor["x"], self._anchor["y"],),
+            prior_scale=self._anchor.get("scale")))
         opening, anchor, resolved = make_report.pick_opening_frame(
             self._frame_dir, names, get_anchor, self.tpl, self.cfg,
             frames=calib_map)
@@ -269,8 +270,9 @@ class StreamingDetector:
             self._slots = got
 
     def _record(self, frame, fname):
-        cur = hud_anchor.detect_anchor(frame, self.tpl,
-                                       prior=(self._anchor["x"], self._anchor["y"]))
+        cur = hud_anchor.detect_anchor(
+            frame, self.tpl, prior=(self._anchor["x"], self._anchor["y"]),
+            prior_scale=self._anchor.get("scale"))
         anchor = cur if cur is not None else self._anchor
         resolved = hud_regions.resolve_regions(self.cfg, anchor)
         make_report.apply_hook_cfg(resolved, anchor, video_name=self.bvid,

@@ -380,6 +380,18 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - 已替换正式产物：删除旧 `report/.../match_2~4`，保留单一 `report/.../match_1/detect_report.csv`；`dataset/videos.jsonl` 中 BV1pht 旧 4 行替换为单行 `match=1`、1690 features、label=-1。
 - **注意**：这次修正使用了用户确认的真值边界与固定锚点，不代表当前 prescan 自动边界算法已经能独立识别该单局；后续应增加"用户确认单局/人工边界"入口，避免 anchor_ratio 偏低时错误切局。
 
+### 3.20 BV1QUt 流程耗时 profile 与提速（2026-09-08）
+
+- 在临时目录对 BV1QUt 做基线/优化后对比，正式 dataset/report 未被改动：
+  - 基线：预扫 `58.0s`，并行检测 `224.3s`，总 `282.3s`。
+  - 优化后：预扫 `38.5–43.5s`，并行检测 `192.0s`，总约 `230.5s`，提速约 **18%**。
+- 优化点：
+  - `prescan.run_prescan` 视频源采样帧缓存为 JPEG 内存数据，第二阶段不再对同一时间点再次 seek/decode；目录源仍直接复用帧对象。
+  - `hud_anchor.detect_anchor` 带 `prior_scale` 时只扫描先验附近 5 个尺度（±0.2），不改变无先验全图搜索；600 帧实测检测从约 92ms/帧降至 71ms/帧。
+- 全量回归：**94 tests PASS，约 53s**。
+- **注意**：预扫 JPEG 缓存以降低内存峰值，但会比原始帧内存缓存慢约 5s；长视频应优先控制内存，不建议无限缓存原始 1080p 帧。
+- 本次 profile 输出位于临时目录 `C:\Users\A\AppData\Local\Temp\opencode\BV1QUt_profile*`，未覆盖正式 dataset/report。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）
