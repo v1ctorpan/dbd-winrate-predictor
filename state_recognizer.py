@@ -5,7 +5,7 @@ import numpy as np
 
 CROPS_DIR = r"D:\files\code\dbd_pred\picture\crops"
 
-ICON_STATES = ["hooked", "dying", "dead", "escaped"]
+ICON_STATES = ["hooked", "dying", "dead", "escaped", "executed"]
 FACE_STATES = ["healthy", "injured"]
 
 EXAMPLE_REFS = {

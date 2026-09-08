@@ -36,7 +36,7 @@ dataset/
 
 | 分量 | 下标 | 维度 | 编码 | 说明 |
 |---|---|---|---|---|
-| p1~p4 状态 | 0–23 | 6×4=24 | one-hot | 每玩家 6 维；类别顺序 `healthy/injured/hooked/dying/dead/escaped`；unknown 归入 healthy |
+| p1~p4 状态 | 0–23 | 6×4=24 | one-hot | 每玩家 6 维；dataset 类别顺序 `healthy/injured/hooked/dying/dead/escaped`；报告内部额外识别 `executed`，编码时归一为 `dead`；unknown 归入 healthy |
 | hooks | 24–27 | 4 | 数值 0/1/2 | p1~p4 上钩次数 |
 | gens | 28 | 1 | 数值 0–5 | 剩余发电机数；无 HUD 时填 `-1.0` |
 | 时间 | 29 | 1 | 原始秒数 | 局内秒数 t，首帧 0，不归一化 |

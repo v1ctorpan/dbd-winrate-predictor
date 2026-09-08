@@ -4,6 +4,7 @@ import os
 
 STATES = ["healthy", "injured", "hooked", "dying", "dead", "escaped"]
 STATE_TO_IDX = {s: i for i, s in enumerate(STATES)}
+STATE_TO_IDX["executed"] = STATE_TO_IDX["dead"]
 
 
 def parse_time(fname):

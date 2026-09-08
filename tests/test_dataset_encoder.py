@@ -30,6 +30,10 @@ class TestOneHotState(unittest.TestCase):
         v = de.one_hot_state("unknown")
         self.assertEqual(v[0], 1)
 
+    def test_executed_maps_to_dead_for_dataset(self):
+        v = de.one_hot_state("executed")
+        self.assertEqual(v, [0, 0, 0, 0, 1, 0])
+
 
 class TestFeatureVector(unittest.TestCase):
     def test_dimension_30(self):

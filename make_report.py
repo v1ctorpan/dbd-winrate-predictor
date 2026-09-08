@@ -23,6 +23,7 @@ OFFICIAL_ICONS = {
     "dying": "icon_dying.webp",
     "escaped": "icon_exitGate.webp",
     "dead": "icon_scarified.png",
+    "executed": "icon_executed.jpg",
 }
 
 
@@ -61,6 +62,7 @@ STATE_COLOR = {
     "dying":   (0, 0, 255),
     "dead":    (128, 128, 128),
     "escaped": (255, 255, 0),
+    "executed": (128, 128, 128),
     "unknown": (0, 0, 0),
 }
 BOX_COLOR = (255, 200, 0)

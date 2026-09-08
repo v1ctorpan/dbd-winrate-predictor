@@ -69,6 +69,16 @@ class TestRedDiagMeanAlign(unittest.TestCase):
         state = mr.classify(crop, 1, self.refs, icon_tpl=icons)
         self.assertEqual(state, "injured")
 
+    def test_executed_icon_is_loaded(self):
+        icons = mr.load_official_icons()
+        self.assertIn("executed", icons)
+        self.assertIsNotNone(icons["executed"])
+
+    def test_executed_icon_classifies_as_executed(self):
+        icons = mr.load_official_icons()
+        state = mr.classify(icons["executed"], 0, self.refs, icon_tpl=icons)
+        self.assertEqual(state, "executed")
+
 
 if __name__ == "__main__":
     unittest.main()

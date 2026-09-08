@@ -358,7 +358,8 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 5. **prescan 头像骤变规则优先级**：当存在"连续 ≥2 样本 4 头像 NCC 骤降"时会丢弃该窗口内 gens 回 5 的伪边界（否则如 BV1QUt 会把第二局开头误切到 950s）。若未来出现"换人不伴随头像骤变"的多局视频，此规则可能漏切——届时需再评估（现由 RECORD 兜底）。
 6. **`run_video_prescan` 旧路径的换局**仍用整片单检测器 + force_new_match，对"第二局开局在转场后"的基线处理不如并行路径可靠；新视频优先走 `--parallel`。
 7. **左缘伪锚点(scale≈1.1, x≈10) 广泛存在**（BV1QUt 每帧都可能命中，score 0.74–0.80）：`_anchor_plausible`/确认式 WAIT 已拦截；但 `find_gen_anchors` 本身仍会返回它，任何直接调它的新代码需自己过滤。
-8. 未提交的本地文件：`asset/icon_executed.jpg`（executed 状态待办用，PROGRESS 旧文记 .png，实际命名 .jpg，用前核对）、调试 montage PNG（`picture/BV1QUt766Etg_*.png`）、`report/BV1QUt766Etg/`——均不入库。
+8. `executed≈dead` 已完成：运行时报告状态保留为 `executed`，`dataset_encoder` 编码时归一为 `dead`，因此 dataset 仍保持 30 维；素材实际为 `asset/icon_executed.jpg`（旧文档中的 `.png` 已按实际文件修正）。
+9. 调试 montage PNG（`picture/BV1QUt766Etg_*.png`）、`report/BV1QUt766Etg/` 为本地验证产物，不入库。
 
 ## 4. 测试数据与真值
 
@@ -420,7 +421,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - ✅ BV1QUt766Etg 验证：预扫崩溃修复（越界空 crop）、锚点全候选共识（anchor_ok 0.40→0.71）、头像骤变切局（边界 950→630）、确认式 WAIT + `_anchor_plausible`（第二局基线 bug 修复）、`run_video_parallel` 按局多进程 + min 帧过滤（全流程 ~4min15s）；dataset 追加 4 局 label=-1（§3.16）。
 
 **下一步（按优先级）**：
-1. ⏳ 状态补充：executed≈dead（Mori 处决画面/结算）；先核对 `asset/icon_executed.jpg`（注意点 8）。
+1. ✅ 状态补充：executed≈dead（Mori 处决画面/结算）；报告识别 `executed`，dataset 编码归一 `dead`，保持 30 维。
 2. ⏳ BV1pht96fEjN 全片端到端：旧估算 ~55min 已过时，现用 `run_pipeline.py picture/raw_videos/BV1pht96fEjN.mp4 BV1pht96fEjN --prescan --parallel`（分钟级）→ 校验数据行 + 更新 `docs/dataset_format.md`。
 3. ⏳ 局内多分片并行（warm-up 状态交接）：单局视频也压到 ~1min 的可选项（§3.16 后续；工程方案见会话记录）。
 4. 后续规划（定稿未实现）：对局序列数据管道（`dataset_encoder.py`→`match_dataset.py`→`match_model.py`→`train_sequence.py`→`predict_live.py`）、`gate_ui` 大门状态、结算自动标注、数据积累上千局、模型调参+胜率走势图（原 §6 编号 9–13，内容不变）。
