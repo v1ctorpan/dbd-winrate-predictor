@@ -365,12 +365,9 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 - 使用命令：`python run_pipeline.py picture/raw_videos/BV1pht96fEjN.mp4 BV1pht96fEjN --prescan --parallel`。
 - 预扫结果：`anchor_ratio=0.453 < 0.5`、`anchor_ok=false`、边界 `590s`；按设计自动回退旧版 `run_video`，本次**没有实际走 match 级并行**。
-- 实际耗时约 **95s**，产出 4 个 CSV 与 4 条 dataset 记录（label=-1）：
-  - match1：6.0–23.5s，36 帧；gens 全 None、头像全 healthy，疑似开头菜单/短暂 HUD 垃圾段，待过滤/人工确认。
-  - match2：24.0–76.5s，106 帧；gens 5→2，头像以 healthy/injured 为主。
-  - match3：77.0–136.0s，119 帧；gens 5→2，p2/p3/p4 有 injured/dying。
-  - match4：136.5–858.5s，1445 帧；主对局段，gens 5→4→3→2→0，p2/p3 大量 `executed`，executed 识别完成真实命中验证。
-- **注意**：CLI 输出 `matches=0` 与实际 4 个 CSV/4 条 dataset 记录不一致，这是 `run_video` 的 `closed_q` 被 encoder 消费后再统计导致的统计口径 bug；不影响 CSV/dataset 产物，但应后续修正。
+- 首次自动跑耗时约 **95s**，错误地产出 4 个 CSV；该结果已按用户真值废弃，不能作为正式分局结论：
+- 该次自动分段的 match1~4 详情已废弃，不作为当前数据真值；真实单局结果记录在 §3.19。
+- **注意**：CLI 输出 `matches=0` 与实际 CSV/dataset 记录不一致，这是 `run_video` 的 `closed_q` 被 encoder 消费后再统计导致的统计口径 bug；不影响产物，但应后续修正。
 - **注意**：BV1pht 的 prescan anchor 不足 0.5，导致本次未享受 parallel 路径；若要验证并行性能或清理短段，应先审阅 `prescan.json`/match1，再决定是否降低 anchor 阈值或增加人工 anchor 入口。
 
 ### 3.19 BV1pht 真值纠正（2026-09-08）
@@ -447,7 +444,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 **main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) + BV1pht 真值纠正(§3.19) 均已推送（见 §分支与提交状态）。dataset 现 6 行（BV1Uu/BV16/BV1aat + BV1QUt×2 + BV1pht 单局，新增记录 label=-1）。
 
 **已完成（本会话）**：
-- ✅ 全量 UT 提速 583s→~56s（§3.15，84→91 tests 含新回归，~59s）。
+- ✅ 全量 UT 提速 583s→~56s（§3.15，现 94 tests，约 53–64s，随机器负载波动）。
 - ✅ BV1aat 单局 dataset 合并（4 行→1 行，796 帧，label=-1；§3.14/§3.15）。
 - ✅ BV1QUt766Etg 验证：预扫崩溃修复（越界空 crop）、锚点全候选共识（anchor_ok 0.40→0.71）、头像骤变切局（边界 950→630）、确认式 WAIT + `_anchor_plausible`（第二局基线 bug 修复）、`run_video_parallel` 按局多进程 + min 帧过滤（全流程 ~4min）；按用户真值重新跑后保留两局记录（§3.16）。
 
