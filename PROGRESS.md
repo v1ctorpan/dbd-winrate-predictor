@@ -1,7 +1,7 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
 > 最后更新：2026-09-08
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；多线程产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送；**全量 UT 提速 ~10x（583s→~56s，§3.15）**；Task5 排查修复（gens 阈值/滚动校准/防 overlay/持久化地板/防误锁/误读 0，§3.8~3.12）已推送；**新视频 BV1QUt766Etg（21.4min）验证驱动的鲁棒性修复 + match 级并行产线已完成并推送（§3.16，全量 91 tests ~59s PASS）**：越界/空 crop 守卫、WAIT 锚点可信性确认、prescan 全候选共识与头像骤变切局、`run_video_parallel` 按局多进程（全流程 ~4min）。dataset 现 7 行（BV1Uu/BV16/BV1aat 单局 + BV1QUt 4 局，均 label=-1 待标注）。剩余：executed≈dead、BV1pht 全片端到端（并行提速后分钟级）、局内多分片并行（见 §6、§3.17 注意点）。
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；多线程产线 Task1-4 与 WAIT 稳定性修复已合入 main 并推送；**全量 UT 提速 ~10x（583s→~56s，§3.15）**；Task5 排查修复（gens 阈值/滚动校准/防 overlay/持久化地板/防误锁/误读 0，§3.8~3.12）已推送；**新视频 BV1QUt766Etg（21.4min）验证驱动的鲁棒性修复 + match 级并行产线已完成并推送（§3.16，全量 91 tests ~59s PASS）**：越界/空 crop 守卫、WAIT 锚点可信性确认、prescan 全候选共识与头像骤变切局、`run_video_parallel` 按局多进程（全流程 ~4min）。**BV1pht96fEjN（14.3min）已完成全片端到端（§3.18，约95s）并验证 executed 真实命中**。dataset 现 11 行（BV1Uu/BV16/BV1aat 单局 + BV1QUt 4 局 + BV1pht 4 段，均 label=-1 待标注）。剩余：BV1QUt/BV1pht 剪辑/短段数据审阅、gate_ui、序列模型等（见 §6、§3.17/§3.18 注意点）。
 
 ## 分支与提交状态（2026-09-08）
 
@@ -361,6 +361,18 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 8. `executed≈dead` 已完成：运行时报告状态保留为 `executed`，`dataset_encoder` 编码时归一为 `dead`，因此 dataset 仍保持 30 维；素材实际为 `asset/icon_executed.jpg`（旧文档中的 `.png` 已按实际文件修正）。
 9. 调试 montage PNG（`picture/BV1QUt766Etg_*.png`）、`report/BV1QUt766Etg/` 为本地验证产物，不入库。
 
+### 3.18 BV1pht96fEjN 全片端到端与 executed 实测（2026-09-08）
+
+- 使用命令：`python run_pipeline.py picture/raw_videos/BV1pht96fEjN.mp4 BV1pht96fEjN --prescan --parallel`。
+- 预扫结果：`anchor_ratio=0.453 < 0.5`、`anchor_ok=false`、边界 `590s`；按设计自动回退旧版 `run_video`，本次**没有实际走 match 级并行**。
+- 实际耗时约 **95s**，产出 4 个 CSV 与 4 条 dataset 记录（label=-1）：
+  - match1：6.0–23.5s，36 帧；gens 全 None、头像全 healthy，疑似开头菜单/短暂 HUD 垃圾段，待过滤/人工确认。
+  - match2：24.0–76.5s，106 帧；gens 5→2，头像以 healthy/injured 为主。
+  - match3：77.0–136.0s，119 帧；gens 5→2，p2/p3/p4 有 injured/dying。
+  - match4：136.5–858.5s，1445 帧；主对局段，gens 5→4→3→2→0，p2/p3 大量 `executed`，executed 识别完成真实命中验证。
+- **注意**：CLI 输出 `matches=0` 与实际 4 个 CSV/4 条 dataset 记录不一致，这是 `run_video` 的 `closed_q` 被 encoder 消费后再统计导致的统计口径 bug；不影响 CSV/dataset 产物，但应后续修正。
+- **注意**：BV1pht 的 prescan anchor 不足 0.5，导致本次未享受 parallel 路径；若要验证并行性能或清理短段，应先审阅 `prescan.json`/match1，再决定是否降低 anchor 阈值或增加人工 anchor 入口。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）
@@ -413,7 +425,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ## 6. 待办（下一步）
 
-**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) 均已推送（见 §分支与提交状态）。dataset 现 7 行（BV1Uu/BV16/BV1aat + BV1QUt×4，label=-1）。
+**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) + BV1pht 全片验证(§3.18) 均已推送（见 §分支与提交状态）。dataset 现 11 行（BV1Uu/BV16/BV1aat + BV1QUt×4 + BV1pht×4，新增记录 label=-1）。
 
 **已完成（本会话）**：
 - ✅ 全量 UT 提速 583s→~56s（§3.15，84→91 tests 含新回归，~59s）。
@@ -422,7 +434,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 **下一步（按优先级）**：
 1. ✅ 状态补充：executed≈dead（Mori 处决画面/结算）；报告识别 `executed`，dataset 编码归一 `dead`，保持 30 维。
-2. ⏳ BV1pht96fEjN 全片端到端：旧估算 ~55min 已过时，现用 `run_pipeline.py picture/raw_videos/BV1pht96fEjN.mp4 BV1pht96fEjN --prescan --parallel`（分钟级）→ 校验数据行 + 更新 `docs/dataset_format.md`。
+2. ✅ BV1pht96fEjN 全片端到端已完成（§3.18，约95s，4 条 label=-1 记录）；后续需审阅 match1 短垃圾段、修正 `matches=0` 统计口径，并更新 `docs/dataset_format.md`。
 3. ⏳ 局内多分片并行（warm-up 状态交接）：单局视频也压到 ~1min 的可选项（§3.16 后续；工程方案见会话记录）。
 4. 后续规划（定稿未实现）：对局序列数据管道（`dataset_encoder.py`→`match_dataset.py`→`match_model.py`→`train_sequence.py`→`predict_live.py`）、`gate_ui` 大门状态、结算自动标注、数据积累上千局、模型调参+胜率走势图（原 §6 编号 9–13，内容不变）。
 
