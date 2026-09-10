@@ -9,6 +9,7 @@ import threading
 import cv2
 
 import dataset_encoder as de
+import labeling
 import prescan
 import stream_detector as sd
 from extract_frames import frame_name
@@ -59,9 +60,12 @@ def _encode_match(bvid, report_root, match_no, videos_path, meta=None):
     csv_path = os.path.join(report_root, bvid, f"match_{match_no}", "detect_report.csv")
     if not os.path.exists(csv_path):
         return 0
+    label = labeling.infer_label_from_csv(csv_path)
+    if label is None:
+        label = -1
     meta = dict(meta or {})
     meta["match"] = match_no
-    rec = de.encode_csv(csv_path, bvid, label=-1, meta=meta)
+    rec = de.encode_csv(csv_path, bvid, label=label, meta=meta)
     de.append_record(videos_path, rec)
     return 1
 

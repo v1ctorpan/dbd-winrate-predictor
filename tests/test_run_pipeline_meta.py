@@ -65,7 +65,7 @@ class TestEncodeMatch(unittest.TestCase):
             self.assertEqual(rec["match"], 3)
             self.assertEqual(rec["title"], "标题X")
             self.assertEqual(rec["url"], "https://www.bilibili.com/video/BV1X")
-            self.assertEqual(rec["label"], -1)
+            self.assertEqual(rec["label"], 0)
             self.assertEqual(len(rec["features"]), 2)
 
     def test_encode_match_no_csv_returns_zero(self):

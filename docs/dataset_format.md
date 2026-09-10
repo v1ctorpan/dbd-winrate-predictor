@@ -21,7 +21,7 @@ dataset/
 | `url` | string | canonical 视频链接 `https://www.bilibili.com/video/{id}`。产线运行时自动填充；无则空串 |
 | `match` | int | 局号。视频内含多局时 1..N；整段式视频（一视频一局）固定 1 |
 | `features` | float[][30] | 逐帧 30 维特征，`features[i]` = 第 i 帧，长度 = 该局帧数 T |
-| `label` | int | 结局标签 = 逃生人数 0–4（5 类多分类目标）；产线自动分段未标注局为 -1 |
+| `label` | int | 结局标签 = 逃生人数 0–4（5 类多分类目标）；**由 `labeling.infer_label_from_csv` 从该局末尾 HUD 帧自动推断**（结尾若干帧中出现过 `escaped` 的人数）；无法判定（如末尾无有效 HUD、剪辑向片段）为 -1 |
 
 示例：
 
@@ -51,9 +51,11 @@ dataset/
 
 ## 5. 结局标注（label）
 
-- `label` = 结算画面逃生人数 0–4
-- 种子数据人工标注：BV1 → 3，BV16 → 1
-- 后续：从结算画面自动标注；`title`/`url` 在产线运行时自动填充（见下）
+- `label` = 该局逃生人数 0–4（用户确认口径：看**最后一帧 HUD** 的 4 个幸存者头像图标，数 `escaped` 个数；`executed`/`dead`/`hooked`/`dying` 均不算逃生）
+- **自动标注**：`labeling.infer_label_from_csv(csv)` 取该局末尾 `window=40` 帧，统计出现 `escaped` 的人数；窗口内无有效 HUD 时返回 -1
+- 剪辑向/非单局片段（如 BV1aat）不进训练集，`label=-1`
+- 历史种子标签已被证伪：原 BV1Uu=3、BV16=1 不正确（见 PROGRESS §3.22），已按真值修正
+- `title`/`url` 在产线运行时自动填充（见下）
 
 ## 6. 生成方式
 
