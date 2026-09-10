@@ -10,6 +10,7 @@ import make_report as mr
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRAME_DIR = os.path.join(BASE, "picture", "BV1Uu8z6eEVM")
+BV16_DIR = os.path.join(BASE, "picture", "BV16QtT6ZEPq")
 REAL_ANCHOR = (121, 847)
 
 
@@ -78,6 +79,40 @@ class TestRedDiagMeanAlign(unittest.TestCase):
         icons = mr.load_official_icons()
         state = mr.classify(icons["executed"], 0, self.refs, icon_tpl=icons)
         self.assertEqual(state, "executed")
+
+
+class TestEscapedHighlighted(unittest.TestCase):
+    """BV16 末帧 p1 是"刚逃出、图标高亮"的逃跑图标(穿门小人), 与暗色版语义相同,
+    应识别为 escaped(否则结局标签漏计)。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = mr.hud_regions.load_regions(mr.CFG)
+        cls.anch = {"x": 143, "y": 806, "scale": 1.5}
+        cls.resolved = mr.hud_regions.resolve_regions(cls.cfg, cls.anch)
+        cls.refs = mr.build_refs(cls.anch["scale"])
+        opening = cv2.imread(os.path.join(BV16_DIR, "frame_00_10.0.jpg"))
+        cls.refs["healthy"] = mr.build_opening_refs(opening, cls.resolved)["healthy"]
+        cls.icons = mr.load_official_icons()
+
+    def _crop(self, name, p):
+        frame = cv2.imread(os.path.join(BV16_DIR, name))
+        b = self.resolved[f"survivor_p{p}"]
+        return frame[b["y0"]:b["y1"], b["x0"]:b["x1"]]
+
+    def test_highlighted_escape_icon_classifies_as_escaped(self):
+        crop = self._crop("frame_04_50.0.jpg", 1)
+        self.assertEqual(mr.classify(crop, 0, self.refs, self.icons), "escaped")
+
+    def test_normal_escaped_frames_still_escaped(self):
+        # p2 为暗黄逃跑图标, 不应因新增高亮模板而回退
+        crop = self._crop("frame_04_50.0.jpg", 2)
+        self.assertEqual(mr.classify(crop, 1, self.refs, self.icons), "escaped")
+
+    def test_non_escape_slot_not_flagged_escaped(self):
+        # p3 不是逃跑图标, 不得误判为 escaped
+        crop = self._crop("frame_04_50.0.jpg", 3)
+        self.assertNotEqual(mr.classify(crop, 2, self.refs, self.icons), "escaped")
 
 
 if __name__ == "__main__":

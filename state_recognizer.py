@@ -202,7 +202,7 @@ def classify(crop, slot, refs, icon_thr=0.55, face_thr=0.35, inj_rg_delta=12.0, 
         return best_icon, best_score
     if icon_tpl:
         for state, tpl in icon_tpl.items():
-            if not tpl:
+            if tpl is None:
                 continue
             s = multi_scale_match(crop, tpl)
             if s > best_score:

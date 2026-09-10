@@ -25,6 +25,10 @@ OFFICIAL_ICONS = {
     "dead": "icon_scarified.png",
     "executed": "icon_executed.jpg",
 }
+# "刚逃出、图标高亮"的逃跑图标(穿门小人)与正常版同形但带高光, 正常模板匹配分数偏低;
+# 单独用紧裁模板 + 更高阈值(0.85)补充, 避免误匹配普通头像。
+ESCAPE_HIGHLIGHTED_ASSET = "icon_escape_highlighted.png"
+ESCAPE_HIGHLIGHTED_THR = 0.85
 
 
 def load_official_icons():
@@ -42,6 +46,13 @@ def load_official_icons():
         else:
             tpl[state] = img
     return tpl
+
+
+def load_escape_highlighted():
+    path = os.path.join(ASSETS, ESCAPE_HIGHLIGHTED_ASSET)
+    if not os.path.exists(path):
+        return None
+    return cv2.imread(path)
 
 REF_CROPS = {
     "hooked":  [("frame_0003", "survivor_p3")],
@@ -106,11 +117,16 @@ def classify(crop, slot, refs, icon_tpl=None):
         return best_icon
     if icon_tpl:
         for state, tpl in icon_tpl.items():
+            if tpl is None:
+                continue
             s = state_recognizer.multi_scale_match(crop, tpl)
             if s > best_score:
                 best_score, best_icon = s, state
         if best_score >= 0.70:
             return best_icon
+    hl = load_escape_highlighted()
+    if hl is not None and state_recognizer.multi_scale_match(crop, hl) >= ESCAPE_HIGHLIGHTED_THR:
+        return "escaped"
     healthy_refs = refs.get("healthy", [])
     if 0 <= slot < len(healthy_refs):
         s = state_recognizer.ncc(crop, fit(healthy_refs[slot]))
