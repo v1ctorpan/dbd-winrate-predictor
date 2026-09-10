@@ -27,7 +27,7 @@ class TestPipeline(unittest.TestCase):
             self.assertEqual(lines[0]["id"], "BV1Uu8z6eEVM")
             self.assertEqual(lines[0]["title"], "测试标题")
             self.assertEqual(lines[0]["url"], "https://www.bilibili.com/video/BV1Uu8z6eEVM")
-            self.assertEqual(len(lines[0]["features"][0]), 30)
+            self.assertEqual(len(lines[0]["frames"][0]), 10)
 
     def test_video_stats_report_closed_matches_not_dataset_total(self):
         class FakeDet:

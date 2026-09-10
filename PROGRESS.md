@@ -430,6 +430,15 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - **注意**：BV1Uu 为 10s 稀疏帧，重分段后两局自动推断均为 0（帧内从未识别到 escaped，目视 18:10 也无逃跑图标），与 match_2 用户真值 2 冲突——该旧帧目录**未覆盖到真正逃生时刻**（或用户记忆偏差）。需后续用源视频 0.5s 重抽才可靠（当前无 BV1Uu mp4）。
 - 全量回归：**110 tests PASS，约 54s**。
 
+### 3.23 videos.jsonl 存储优化：紧凑帧元组（2026-09-08）
+
+- **动机**：每帧原存 30 个浮点 one-hot（大量 `0.0/1.0`），154 B/帧；`videos.jsonl` 785 KB/5091 帧，上千局将膨胀到数百 MB。
+- **方案（用户选定）**：行键 `features`（30 维）→ `frames`（每帧 10 个整数）
+  `[s1,s2,s3,s4, h1,h2,h3,h4, gens, t_half]`：状态用类别索引（unknown→0、executed→4）、`t_half` 复用 `parse_time` 半秒整数。
+- **实现**：`dataset_encoder.compact_frame`（编码）、`frames_to_features`（还原 30 维，供模型/兼容）；`encode_csv` 输出 `frames`。因下游序列模型尚未实现，此格式变更成本最低。
+- **效果**：**785 KB → 176 KB（约 4.5x）**，仍为可读 JSONL。
+- 文档 `docs/dataset_format.md` 已同步；旧 `features` 键废弃。全量回归 **113 tests PASS**。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）

@@ -23,6 +23,17 @@ def one_hot_state(state):
     return v
 
 
+def compact_frame(row):
+    """把一行检测结果压成 10 个整数：
+    [p1..p4 状态类别索引, hooks×4, gens(-1..5), 半秒时间]。
+    占用远小于 30 维浮点 one-hot；unknown->healthy(0)、executed->dead(4)。"""
+    states = [STATE_TO_IDX.get(row[p], 0) for p in ("p1", "p2", "p3", "p4")]
+    hooks = [int(h) for h in row["hooks"].split("/")]
+    gens = row["gens"].strip()
+    gens = -1 if gens in ("None", "") else int(gens)
+    return states + hooks + [gens, parse_time(row["frame"])]
+
+
 def feature_vector(row):
     feats = []
     for p in ("p1", "p2", "p3", "p4"):
@@ -35,13 +46,24 @@ def feature_vector(row):
     return feats
 
 
-def encode_csv(csv_path, video_id, label, meta=None):
-    """把 detect_report.csv 编码为一条 dataset 记录。
+def frames_to_features(frames):
+    """把紧凑帧元组还原成 30 维特征向量列表（供模型/兼容旧格式）。"""
+    out = []
+    for f in frames:
+        feats = []
+        for i in range(4):
+            v = [0.0] * len(STATES)
+            v[int(f[i])] = 1.0
+            feats.extend(v)
+        feats.extend(float(h) for h in f[4:8])
+        feats.append(float(f[8]))
+        feats.append(f[9] / 2.0)
+        out.append(feats)
+    return out
 
-    video_id = 纯 BV号（bvid，恢复种子原样，不含 :match 后缀）。
-    meta 可选: {"match": 局号(默认 1), "title": ..., "url": ...}。
-    局号由 meta["match"] 单独记录，title/url 由产线/调用方填充。
-    """
+
+def encode_csv(csv_path, video_id, label, meta=None):
+    """把 detect_report.csv 编码为一条 dataset 记录（紧凑帧元组）。"""
     meta = meta or {}
     rows = []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
@@ -52,7 +74,7 @@ def encode_csv(csv_path, video_id, label, meta=None):
         "title": meta.get("title", ""),
         "url": meta.get("url", ""),
         "match": int(meta.get("match", 1)),
-        "features": [feature_vector(r) for r in rows],
+        "frames": [compact_frame(r) for r in rows],
         "label": int(label),
     }
 
@@ -87,7 +109,7 @@ def main():
     for video_id, csv_path, label in spec:
         rec = encode_csv(csv_path, video_id, label)
         records.append(rec)
-        print(f"[{video_id}] {len(rec['features'])} frames label={rec['label']}")
+        print(f"[{video_id}] {len(rec['frames'])} frames label={rec['label']}")
     n = write_videos_jsonl(records, os.path.join("dataset", "videos.jsonl"))
     print(f"wrote {n} videos -> dataset/videos.jsonl")
 
