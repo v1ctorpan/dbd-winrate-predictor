@@ -1,10 +1,12 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
+import numpy as np
 
 import prescan
 
@@ -67,6 +69,19 @@ class TestFindBoundaries(unittest.TestCase):
         sims = [None, None, None, 0.1]
         self.assertEqual(prescan.find_boundaries(_samples(gens, sims)), [3])
 
+    def test_marginal_portrait_change_same_gens_not_boundary(self):
+        """BV1pht 型: gens 读不到形成长 None 断档后同值复现, 但头像只是轻微变化
+        (sim≈0.78, 非换人) -> 不是切局, 否则单局被误切。"""
+        gens = [5, 4, 3, None, None, None, 3]
+        sims = [None, 1.0, 1.0, None, None, None, 0.78]
+        self.assertEqual(prescan.find_boundaries(_samples(gens, sims)), [])
+
+    def test_strong_portrait_change_same_gens_is_boundary(self):
+        """同值断档后头像剧烈变化(sim 很低)才是真切局。"""
+        gens = [5, 4, 3, None, None, None, 3]
+        sims = [None, 1.0, 1.0, None, None, None, 0.2]
+        self.assertEqual(prescan.find_boundaries(_samples(gens, sims)), [6])
+
     def test_noise_dip_recovery_not_boundary(self):
         """单帧噪声读低(4->3 误读)后回真值 4 是"上升", 但头像没变 -> 不切。"""
         gens = [5, 4, 3, 4, 4, 4]
@@ -81,33 +96,51 @@ class TestFindBoundaries(unittest.TestCase):
 
 class TestAvatarBoundary(unittest.TestCase):
     """头像区骤变 = 旧局结束(换人/结算)。BV1QUt766Etg 型: gens 修完后残局
-    长时间 0, gens 不再回 5, 旧 gens 切局规则失效/滞后; 应以头像内容骤变切局。"""
+    长时间 0, gens 不再回 5, 旧 gens 切局规则失效/滞后; 应以头像内容骤变切局。
+    须确认骤变后头像"持续不同"才切, 局内暂时波动(会恢复)不切。"""
 
-    def _frames(self, n):
-        return [[0]] * 4
+    def _grad(self, vertical=True, n=4):
+        base = np.zeros((10, 10, 3), dtype=np.uint8)
+        if vertical:
+            base[:, :, :] = np.arange(10, dtype=np.uint8)[:, None, None] * 25
+        else:
+            base[:, :, :] = np.arange(10, dtype=np.uint8)[None, :, None] * 25
+        return [base.copy() for _ in range(n)]
+
+    def _samples(self, gens, sims, portraits):
+        out = []
+        for i, g in enumerate(gens):
+            out.append(prescan.Sample(
+                t=float(i), fname=f"f{i}", gens=g, portraits=portraits[i],
+                sim_prev=sims[i]))
+        return out
 
     def test_sustained_avatar_change_is_boundary(self):
-        """稳定 HUD 后连续 >=2 样本头像骤变(sim 低) -> 切在首次骤变处(旧局结束)。"""
+        """骤变后头像持续不同(换人) -> 切在首次骤变处(旧局结束)。"""
+        vert, horiz = self._grad(True), self._grad(False)
         gens = [5, 4, 3, 2, 0, 0, 0, 0, 0, 0, 0]
         sims = [None] + [0.9, 0.9, 0.85, 0.8, 0.7, 0.1, 0.05, 0.9, 0.8, 0.85]
-        samples = []
-        for i, g in enumerate(gens):
-            samples.append(prescan.Sample(
-                t=float(i), fname=f"f{i}", gens=g, portraits=self._frames(1),
-                sim_prev=sims[i]))
-        got = prescan.find_boundaries(samples)
+        portraits = [vert] * 11
+        portraits[5] = vert
+        portraits[8] = horiz
+        got = prescan.find_boundaries(self._samples(gens, sims, portraits))
         self.assertEqual(got, [6])
+
+    def test_transient_avatar_dip_reverts_not_boundary(self):
+        """BV1pht 型: 连续低 sim 后头像又恢复相似 -> 局内波动, 不切。"""
+        vert = self._grad(True)
+        gens = [5, 4, 3, 3, 3, 3]
+        sims = [None, 0.9, 0.1, 0.05, 0.9, 0.85]
+        portraits = [vert] * 6
+        self.assertEqual(prescan.find_boundaries(self._samples(gens, sims, portraits)), [])
 
     def test_momentary_avatar_dip_is_not_boundary(self):
         """单样本 sim 跌落(状态变化)后回稳 -> 同局, 不切。"""
+        vert = self._grad(True)
         gens = [5, 4, 3, 3, 3, 3, 3]
         sims = [None, 0.9, 0.8, 0.2, 0.9, 0.85, 0.8]
-        samples = []
-        for i, g in enumerate(gens):
-            samples.append(prescan.Sample(
-                t=float(i), fname=f"f{i}", gens=g, portraits=self._frames(1),
-                sim_prev=sims[i]))
-        self.assertEqual(prescan.find_boundaries(samples), [])
+        portraits = [vert] * 7
+        self.assertEqual(prescan.find_boundaries(self._samples(gens, sims, portraits)), [])
 
 
 class TestConsensusCandidates(unittest.TestCase):
@@ -164,6 +197,29 @@ class TestPrescanReal(unittest.TestCase):
         res = prescan.run_prescan(BV16)
         self.assertIsNotNone(res.anchor)
         self.assertEqual(res.boundaries, [])
+
+
+class TestAnchorMinScore(unittest.TestCase):
+    """锚点候选发现阈值应使用降低后的 ANCHOR_MIN_SCORE(0.55), 与 gens 图标
+    识别阈值一致; 否则 NCC 0.66~0.69 的真实图标帧会被漏掉, anchor_ratio 被低估。"""
+
+    def test_run_prescan_uses_lowered_anchor_min_score(self):
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        seen = {}
+
+        def fake_find(f, tpl, **kwargs):
+            seen.update(kwargs)
+            return []
+
+        with mock.patch.object(prescan, "iter_sample_frames",
+                               return_value=iter([(0.0, frame)])), \
+                mock.patch.object(prescan.hud_anchor, "find_gen_anchors",
+                                  side_effect=fake_find):
+            prescan.run_prescan("dummy.mp4")
+
+        self.assertIn("min_score", seen)
+        self.assertEqual(seen["min_score"], prescan.ANCHOR_MIN_SCORE)
+        self.assertLess(prescan.ANCHOR_MIN_SCORE, 0.70)
 
 
 if __name__ == "__main__":

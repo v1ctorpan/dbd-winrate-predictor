@@ -83,6 +83,38 @@ class TestPipeline(unittest.TestCase):
         self.assertFalse(FakeDet.instance.detect_match_end)
         self.assertEqual(stats, {"matches": 1, "records": 1, "closed": [1]})
 
+    def test_manual_single_match_auto_detects_anchor(self):
+        class FakeDet:
+            instance = None
+
+            def __init__(self, *args, **kwargs):
+                self.anchor_prior = kwargs["anchor_prior"]
+                FakeDet.instance = self
+
+            def feed(self, frame, fname):
+                return None
+
+            def finish(self):
+                return [1]
+
+        class FakePre:
+            anchor = {"x": 141, "y": 804, "scale": 1.6}
+
+        frames = [(None, "frame_00_00.0.jpg")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(rp, "_video_duration", return_value=100.0), \
+                mock.patch.object(rp.prescan, "run_prescan", return_value=FakePre()) as rpre, \
+                mock.patch.object(rp, "_iter_window_frames", return_value=iter(frames)) as it, \
+                mock.patch.object(rp.sd, "StreamingDetector", FakeDet), \
+                mock.patch.object(rp, "_encode_match", return_value=1):
+            stats = rp.run_video_manual("dummy.mp4", "BV1X",
+                                        videos=os.path.join(d, "videos.jsonl"),
+                                        report_root=d, frames_root=d)
+        rpre.assert_called_once()
+        it.assert_called_once_with("dummy.mp4", 0.0, 100.0, 0.5)
+        self.assertEqual(FakeDet.instance.anchor_prior, FakePre.anchor)
+        self.assertEqual(stats, {"matches": 1, "records": 1, "closed": [1]})
+
 
 if __name__ == "__main__":
     unittest.main()

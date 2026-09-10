@@ -351,7 +351,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ### 3.17 注意点 / 接手提示（2026-09-08，显式列出）
 
-1. **运行环境命令**：全量 UT = `python -m unittest discover -s tests`（base Python 3.8.18，现 96 tests ~55s）。多局视频全量 = `python run_pipeline.py <mp4> <bvid> --prescan --parallel`（`run_video_parallel`；单局/锚点不可信自动回退旧 `run_video_prescan`）。用户确认单局时 = `python run_pipeline.py <mp4> <bvid> --single-match --anchor X Y SCALE --end-at SECONDS`。新视频下载用 dbd env `python -m yt_dlp -f 30080 --write-info-json -c -o "picture/raw_videos/%(id)s.%(ext)s" <url>`（bilibili 需 `--add-header "Referer:https://www.bilibili.com/"` + Chrome UA 防 HTTP 412）。
+1. **运行环境命令**：全量 UT = `python -m unittest discover -s tests`（base Python 3.8.18，现 101 tests ~53s）。多局视频全量 = `python run_pipeline.py <mp4> <bvid> --prescan --parallel`（`run_video_parallel`；单局/锚点不可信自动回退旧 `run_video_prescan`）。强制按单局处理 = `python run_pipeline.py <mp4> <bvid> --single-match [--end-at SECONDS] [--anchor X Y SCALE]`（锚点默认自动识别，`--anchor` 仅作可选覆盖）。新视频下载用 dbd env `python -m yt_dlp -f 30080 --write-info-json -c -o "picture/raw_videos/%(id)s.%(ext)s" <url>`（bilibili 需 `--add-header "Referer:https://www.bilibili.com/"` + Chrome UA 防 HTTP 412）。
 2. **BV1QUt766Etg 是剪辑向视频**：用户确认真实为两局；当前已按预扫边界 630s 合并为两条记录，仍建议只作检测质量验证，不直接作为训练样本（与 BV1aat 结论一致，训练样本仍应以完整单局视频为准）。
 3. **`run_video_parallel` 的帧不落盘**：worker 把帧写进临时 scratch 后删除（只保留 CSV 入 report + dataset）。如需可视核对帧需另行抽取或改代码（frames_root 参数目前只影响单局回退路径）。
 4. **确认式 WAIT 语义变化**：给 `anchor_prior` 后不再立即开局，须先验附近连续出现 HUD 图标（`wait_min_frames` 帧）才 CALIBRATE——这修掉了"转场帧建基线→整局 unknown"的 bug，但也意味着**开局前无 HUD 的帧不会产生行**（属预期）。
@@ -375,7 +375,31 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - 用户确认：`BV1pht96fEjN` 实际是**单局**，于 `14:10.5 = 850.5s` 结束；此前按 prescan/旧换局规则得到的 4 段不是 4 局，判断错误。
 - 已用固定真值隔离重跑：anchor=`(141,804) scale=1.6`、`detect_match_end=False`、窗口 `[0,850.5s)`；产出单 CSV **1690 帧**，时间 `5.5–850.0s`，gens 主走势 `5→4→3→2→0`，p2/p3 大量 `executed` 命中。
 - 已替换正式产物：删除旧 `report/.../match_2~4`，保留单一 `report/.../match_1/detect_report.csv`；`dataset/videos.jsonl` 中 BV1pht 旧 4 行替换为单行 `match=1`、1690 features、label=-1。
-- **注意**：这次修正使用了用户确认的真值边界与固定锚点，不代表当前 prescan 自动边界算法已经能独立识别该单局；现已增加 `--single-match --anchor X Y SCALE --end-at SECONDS` 人工入口，避免 anchor_ratio 偏低时错误切局。
+- **注意**：该次修正当时用了人工锚点/结束时间；现已改为**自动识别**（见 §3.21），无需人工锚点即可得到单局结论。
+
+### 3.21 自动锚点/切局的可靠性修复（2026-09-08）
+
+**背景**：用户指出"人工确认锚点不靠谱，还是要自动识别"。排查 BV1pht 自动失败根因后修复，四个真值视频现已全部自动判定正确。
+
+- **根因 A（锚点阈值过高）**：`find_gen_anchors` 默认 `min_score=0.70`，而 BV1pht 发电机图标 NCC 实测仅 `0.66~0.69`（与 §3.8-A 一致）。抽样验证：真实图标命中率 `min_score=0.70 → 35%`、`0.55 → 95%`；共识支持数被严重低估，`anchor_ratio` 误为 `0.453 < 0.5` → `anchor_ok=false` → 回退旧产线并被误切。
+  - 修复：`prescan.run_prescan` 新增 `anchor_min_score`（默认 `ANCHOR_MIN_SCORE=0.55`，与 gens 图标识别 `GEN_ICON_THR` 一致）；跨帧共识本身能滤除不稳定伪匹配，降低阈值安全。
+  - 效果：BV1pht `anchor_ratio 0.453 → 0.942`，`anchor_ok=true`。
+- **根因 B（gens 同值+断档切局过松）**：`find_boundaries` 的"同值+≥2 帧断档复现"分支用 `portrait_thr=0.8`，而 BV1pht 530~580s 只是 gens 暂时读不到（HUD 仍在，sim≈0.78）却被判换局（原边界 590s）。
+  - 修复：该分支单独用更严阈值 `SAME_VALUE_PORTRAIT_THR=0.5`（`g > last_g` 仍用 0.8）。
+- **根因 C（头像骤变规则把局内波动当换局）**：降阈值后 BV1pht 出现假边界 210s——210/220s 连续 sim 0.22/0.31 只是局内头像状态变化，230s 又恢复。
+  - 修复：`_avatar_boundaries` 增加"确认"——骤变段结束后头像须与段前**持续不同**（`portrait_similarity(post, pre) < AVATAR_CONFIRM_THR=0.5`）才算换局；恢复相似则判为局内波动不切。
+- **四视频自动回归**（无人工锚点）：
+
+  | 视频 | anchor_ratio | anchor_ok | single | 边界 |
+  |---|---|---|---|---|
+  | BV1Uu8z6eEVM | 0.836 | true | false | 640 |
+  | BV16QtT6ZEPq | 0.700 | true | true | — |
+  | BV1pht96fEjN | 0.942 | true | **true** | — |
+  | BV1QUt766Etg | 0.798 | true | false | 630 |
+
+- **BV1pht 自动端到端验证**（隔离临时目录，未用人工锚点）：`run_video_parallel` 自动走单局分支 → 1 个 match、1707 帧、`5.5–858.5s`、约 4min45s；与真值（单局）一致（尾部含结算，可不截或加 `--end-at`）。
+- **`--single-match` 语义调整**：不再要求人工 `--anchor`；锚点默认自动识别，`--anchor` 改为可选覆盖，`--end-at` 可选（默认到视频结束），用于强制单局/截断。
+- 全量回归：**101 tests PASS，约 53s**。
 
 ### 3.20 BV1QUt 流程耗时 profile 与提速（2026-09-08）
 
@@ -450,7 +474,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 **下一步（按优先级）**：
 1. ✅ 状态补充：executed≈dead（Mori 处决画面/结算）；报告识别 `executed`，dataset 编码归一 `dead`，保持 30 维。
-2. ✅ BV1pht96fEjN 全片端到端已完成并按用户真值纠正为单局（§3.18/§3.19，固定 anchor 隔离重跑约241s，1690 帧、5.5–850.0s、1 条 label=-1 记录）；`matches=0` 统计与人工单局入口均已修复。
+2. ✅ BV1pht96fEjN 全片端到端已完成并按用户真值纠正为单局（§3.18/§3.19，1690 帧、5.5–850.0s、1 条 label=-1 记录）；`matches=0` 统计已修，且**自动锚点/切局已修复（§3.21）**——BV1pht 现无需人工锚点即自动判为单局（ratio 0.942）。
 3. ⏳ 局内多分片并行（warm-up 状态交接）：单局视频也压到 ~1min 的可选项（§3.16 后续；工程方案见会话记录）。
 4. 后续规划（定稿未实现）：对局序列数据管道（`dataset_encoder.py`→`match_dataset.py`→`match_model.py`→`train_sequence.py`→`predict_live.py`）、`gate_ui` 大门状态、结算自动标注、数据积累上千局、模型调参+胜率走势图（原 §6 编号 9–13，内容不变）。
 

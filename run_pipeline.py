@@ -180,12 +180,22 @@ def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
     return {"matches": len(closed), "records": len(encoded), "closed": closed}
 
 
-def run_video_manual(video, bvid, anchor_prior, end_at, interval=0.5,
+def run_video_manual(video, bvid, anchor_prior=None, end_at=None, interval=0.5,
                      videos=DATASET, report_root=None, frames_root=None,
-                     meta=None):
-    """人工确认单局入口：固定锚点、禁用自动换局、在 end_at 秒结束。"""
+                     meta=None, anchor_min_score=None):
+    """人工指定"单局"意图入口: 锚点仍**自动识别**(可用 anchor_prior 覆盖),
+    禁用自动换局, 并在 end_at 秒(默认视频时长)结束。"""
     report_root = report_root or os.path.join(BASE, "report", bvid)
     frames_root = frames_root or PICTURE
+    if end_at is None:
+        end_at = _video_duration(video)
+    if anchor_prior is None:
+        kwargs = {} if anchor_min_score is None else {"anchor_min_score": anchor_min_score}
+        pre = prescan.run_prescan(video, interval=prescan.DEFAULT_INTERVAL, **kwargs)
+        anchor_prior = pre.anchor
+        if anchor_prior is None:
+            raise RuntimeError(
+                "自动锚点识别失败；请先跑 --prescan 检查，或用 --anchor 覆盖")
     det = sd.StreamingDetector(bvid, report_root, frames_root, hook_names=[bvid],
                                anchor_prior=anchor_prior, detect_match_end=False)
     for frame, fname in _iter_window_frames(video, 0.0, end_at, interval):
@@ -458,11 +468,11 @@ def main():
     ap.add_argument("--parallel", action="store_true",
                     help="多局 mp4: 每局一个独立进程并行检测(单局/锚点不可信自动回退)")
     ap.add_argument("--single-match", action="store_true",
-                    help="人工确认单局：固定锚点、禁用自动换局，需同时提供 --anchor/--end-at")
+                    help="强制按单局处理：锚点自动识别(--anchor 可覆盖)、禁用自动换局")
     ap.add_argument("--anchor", nargs=3, type=float, metavar=("X", "Y", "SCALE"),
-                    help="人工单局锚点 X Y SCALE")
+                    help="可选：覆盖自动识别的锚点 X Y SCALE")
     ap.add_argument("--end-at", type=float,
-                    help="人工单局结束秒数（半开区间 [0,end_at)）")
+                    help="可选：单局结束秒数（半开区间 [0,end_at)，默认到视频结束）")
     ap.add_argument("--title", default=None, help="视频标题(缺省自动读 raw_videos/{bvid}.info.json)")
     ap.add_argument("--url", default=None, help="视频 url(缺省 canonical 或 info.json webpage_url)")
     args = ap.parse_args()
@@ -471,11 +481,12 @@ def main():
         stats = run_frames_dir(args.source, args.bvid, sample=args.sample,
                                videos=args.videos, meta=meta)
     elif args.single_match:
-        if args.anchor is None or args.end_at is None:
-            ap.error("--single-match requires --anchor X Y SCALE and --end-at SECONDS")
-        x, y, scale = args.anchor
+        anchor = None
+        if args.anchor is not None:
+            x, y, scale = args.anchor
+            anchor = {"x": x, "y": y, "scale": scale}
         stats = run_video_manual(
-            args.source, args.bvid, {"x": x, "y": y, "scale": scale}, args.end_at,
+            args.source, args.bvid, anchor, args.end_at,
             interval=args.interval, videos=args.videos, meta=meta)
     elif args.prescan and args.parallel:
         stats = run_video_parallel(args.source, args.bvid, interval=args.interval,

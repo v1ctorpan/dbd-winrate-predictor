@@ -29,6 +29,14 @@ PORTRAIT_NCC_THR = 0.8
 DEFAULT_INTERVAL = 10.0
 PORTRAIT_MIN_STD = 8.0
 MIN_ANCHOR_SCALE = 0.9
+# 锚点候选发现阈值: 与 gens 图标识别阈值(GEN_ICON_THR=0.55)一致。
+# 部分视频(如 BV1pht96fEjN)发电机图标 NCC 只有 0.66~0.69, 用 0.70 会漏掉约 65%
+# 的真实 HUD 帧 -> 共识支持数被低估 -> anchor_ratio 误判为不置信。跨帧共识本身
+# 能滤除不稳定的伪匹配, 故此处可安全降低阈值。
+ANCHOR_MIN_SCORE = 0.55
+# 同值+长断档复现时的头像差异阈值: 该分支是"末局速杀"补救, 需头像剧烈变化才采纳,
+# 避免 HUD 仍在但 gens 暂时读不到(BV1pht 530~580s, sim≈0.78)被误切。
+SAME_VALUE_PORTRAIT_THR = 0.5
 
 
 @dataclass
@@ -59,15 +67,21 @@ class PrescanResult:
 SIM_CHANGE_THR = 0.35
 MIN_AVATAR_RUN = 2
 AVATAR_MERGE_WIN = 3
+AVATAR_CONFIRM_THR = 0.5
 
 
 def _avatar_boundaries(samples, sim_change_thr=SIM_CHANGE_THR,
-                       min_run=MIN_AVATAR_RUN, merge_win=AVATAR_MERGE_WIN):
+                       min_run=MIN_AVATAR_RUN, merge_win=AVATAR_MERGE_WIN,
+                       confirm_thr=AVATAR_CONFIRM_THR):
     """头像区骤变切局(旧局结束): 换人/结算使 4 头像 NCC(sim_prev)骤降。
 
     找连续 >=min_run 个"前后头像差异明显"的样本段, 切在段首(首次骤变)。
     转场常夹杂瞬时回稳(如 BV1QUt766Etg 660s sim=0.96 单点), 相邻骤变段
     若间隔 <= merge_win 个样本视为同一转场, 只取最早段首, 避免多切。
+
+    确认(防局内波动误切): 骤变段结束后, 头像须与段前**持续不同**才算换局;
+    若前后头像重新变回相似(如 BV1pht 210~220s 只是局内受伤/上钩造成的
+    暂时差异, 230s 又恢复), 则判为局内波动, 不切。
     """
     n = len(samples)
     changed = [False] * n
@@ -92,21 +106,34 @@ def _avatar_boundaries(samples, sim_change_thr=SIM_CHANGE_THR,
         if merged and start - prev_end <= merge_win:
             prev_end = end
             continue
-        merged.append(start)
+        merged.append((start, end))
         prev_end = end
-    return merged
+    out = []
+    for start, end in merged:
+        pre_i, post_i = start - 1, end + 1
+        if 0 <= pre_i < n and 0 <= post_i < n:
+            pre = samples[pre_i].portraits
+            post = samples[post_i].portraits
+            if pre is not None and post is not None:
+                sim = portrait_similarity(post, pre)
+                if sim is not None and sim >= confirm_thr:
+                    continue
+        out.append(start)
+    return out
 
 
-def find_boundaries(samples, portrait_thr=PORTRAIT_NCC_THR):
+def find_boundaries(samples, portrait_thr=PORTRAIT_NCC_THR,
+                    same_value_portrait_thr=SAME_VALUE_PORTRAIT_THR):
     """扫描样本序列, 返回换局边界所在的 sample 下标(旧局结束/新局首帧之间)。
 
     两级信号:
     - 头像骤变切局(优先): 幸存者换人/结算 -> 头像区内容骤变并持续, 即旧局结束。
       残局段 gens 恒 0/None、不再回 5(如 BV1QUt766Etg), 旧 gens 规则会漏/滞后,
       此信号在此场景更可靠。
-    - gens 跳变切局(回退): 无头像骤变时, gens 异常跳变(高于递减基线或同值
-      隔断档后复现) 且头像差异明显才切。仅靠前者会在残局 gens 回 5 的误报
-      (如本视频 950s) 处多切, 故有头像骤变边界时以它为准。
+    - gens 跳变切局(回退): 无头像骤变时, gens 高于递减基线(g > last_g) 且头像
+      差异明显才切。同值隔断档复现(g == last_g) 的条件更严: 只有头像**剧烈**
+      变化(sim < same_value_portrait_thr)才判切局, 避免 HUD 在但 gens 读不到
+      (如 BV1pht 530~580s)被误切。有头像骤变边界时以它为准。
     """
     avatar = _avatar_boundaries(samples)
     if avatar:
@@ -124,8 +151,19 @@ def find_boundaries(samples, portrait_thr=PORTRAIT_NCC_THR):
             gap_len += 1
             continue
         ended_gap = zero_seen or gap_len >= 2
-        jumped = last_g is not None and (g > last_g or (g == last_g and ended_gap))
-        if jumped and s.sim_prev is not None and s.sim_prev < portrait_thr:
+        if last_g is None:
+            jumped = False
+            thr = portrait_thr
+        elif g > last_g:
+            jumped = True
+            thr = portrait_thr
+        elif g == last_g and ended_gap:
+            jumped = True
+            thr = same_value_portrait_thr
+        else:
+            jumped = False
+            thr = portrait_thr
+        if jumped and s.sim_prev is not None and s.sim_prev < thr:
             out.append(i)
         last_g = g
         gap_len = 0
@@ -278,12 +316,13 @@ def portrait_similarity(crops_a, crops_b):
 
 
 def run_prescan(source, interval=DEFAULT_INTERVAL, max_frames=None,
-                cfg_path=CFG, tpl_path=ANCHOR_TPL):
+                cfg_path=CFG, tpl_path=ANCHOR_TPL, anchor_min_score=ANCHOR_MIN_SCORE):
     """对视频/抽帧目录做 10s 预扫, 返回 PrescanResult。
 
     两遍: 第一遍只收集每帧全部候选(不读 gens), 用跨帧支持数选主簇作为共识锚点
     ——单帧最高分会被常驻高分伪匹配(如 BV1QUt766Etg 左缘 scale1.1 噪声)带偏;
     第二遍用"共识锚点附近候选"读 gens/头像, 供多局判定。
+    anchor_min_score 控制候选发现阈值(默认 0.55, 见常量说明)。
     """
     tpl = cv2.imread(tpl_path)
     cfg = hud_regions.load_regions(cfg_path)
@@ -302,7 +341,8 @@ def run_prescan(source, interval=DEFAULT_INTERVAL, max_frames=None,
             sampled_frames.append((t, encoded))
         else:
             sampled_frames.append((t, frame))
-        cands_per_frame.append(hud_anchor.find_gen_anchors(frame, tpl))
+        cands_per_frame.append(
+            hud_anchor.find_gen_anchors(frame, tpl, min_score=anchor_min_score))
     consensus, ratio = _consensus_candidates(cands_per_frame)
 
     samples = []
