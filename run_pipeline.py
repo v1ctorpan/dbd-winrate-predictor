@@ -119,6 +119,8 @@ def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
     q = queue.Queue(maxsize=64)
     closed_q = queue.Queue()
     errors = []
+    closed = []
+    encoded = []
 
     def producer():
         try:
@@ -141,11 +143,14 @@ def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
             try:
                 r = det.feed(frame, fname)
                 if isinstance(r, dict) and "match_end" in r:
-                    closed_q.put(r["match_end"])
+                    match_no = r["match_end"]
+                    closed.append(match_no)
+                    closed_q.put(match_no)
             except Exception as e:  # noqa: BLE001
                 errors.append(e)
             q.task_done()
         for m in det.finish():
+            closed.append(m)
             closed_q.put(m)
         closed_q.put(_SENTINEL)
 
@@ -156,7 +161,8 @@ def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
                 closed_q.task_done()
                 break
             try:
-                _encode_match(bvid, report_root, item, videos, meta=meta)
+                if _encode_match(bvid, report_root, item, videos, meta=meta):
+                    encoded.append(item)
             except Exception as e:  # noqa: BLE001
                 errors.append(e)
             closed_q.task_done()
@@ -171,12 +177,21 @@ def run_video(video, bvid, interval=0.5, videos=DATASET, report_root=None,
     t3.join()
     if errors:
         raise errors[0]
-    closed = list(closed_q.queue)
-    n_rec = 0
-    with open(videos, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                n_rec += 1
+    return {"matches": len(closed), "records": len(encoded), "closed": closed}
+
+
+def run_video_manual(video, bvid, anchor_prior, end_at, interval=0.5,
+                     videos=DATASET, report_root=None, frames_root=None,
+                     meta=None):
+    """人工确认单局入口：固定锚点、禁用自动换局、在 end_at 秒结束。"""
+    report_root = report_root or os.path.join(BASE, "report", bvid)
+    frames_root = frames_root or PICTURE
+    det = sd.StreamingDetector(bvid, report_root, frames_root, hook_names=[bvid],
+                               anchor_prior=anchor_prior, detect_match_end=False)
+    for frame, fname in _iter_window_frames(video, 0.0, end_at, interval):
+        det.feed(frame, fname)
+    closed = det.finish()
+    n_rec = sum(_encode_match(bvid, report_root, m, videos, meta=meta) for m in closed)
     return {"matches": len(closed), "records": n_rec, "closed": closed}
 
 
@@ -442,6 +457,12 @@ def main():
     ap.add_argument("--prescan-interval", type=float, default=prescan.DEFAULT_INTERVAL)
     ap.add_argument("--parallel", action="store_true",
                     help="多局 mp4: 每局一个独立进程并行检测(单局/锚点不可信自动回退)")
+    ap.add_argument("--single-match", action="store_true",
+                    help="人工确认单局：固定锚点、禁用自动换局，需同时提供 --anchor/--end-at")
+    ap.add_argument("--anchor", nargs=3, type=float, metavar=("X", "Y", "SCALE"),
+                    help="人工单局锚点 X Y SCALE")
+    ap.add_argument("--end-at", type=float,
+                    help="人工单局结束秒数（半开区间 [0,end_at)）")
     ap.add_argument("--title", default=None, help="视频标题(缺省自动读 raw_videos/{bvid}.info.json)")
     ap.add_argument("--url", default=None, help="视频 url(缺省 canonical 或 info.json webpage_url)")
     args = ap.parse_args()
@@ -449,6 +470,13 @@ def main():
     if os.path.isdir(args.source):
         stats = run_frames_dir(args.source, args.bvid, sample=args.sample,
                                videos=args.videos, meta=meta)
+    elif args.single_match:
+        if args.anchor is None or args.end_at is None:
+            ap.error("--single-match requires --anchor X Y SCALE and --end-at SECONDS")
+        x, y, scale = args.anchor
+        stats = run_video_manual(
+            args.source, args.bvid, {"x": x, "y": y, "scale": scale}, args.end_at,
+            interval=args.interval, videos=args.videos, meta=meta)
     elif args.prescan and args.parallel:
         stats = run_video_parallel(args.source, args.bvid, interval=args.interval,
                                    prescan_interval=args.prescan_interval,

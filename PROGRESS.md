@@ -351,7 +351,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ### 3.17 注意点 / 接手提示（2026-09-08，显式列出）
 
-1. **运行环境命令**：全量 UT = `python -m unittest discover -s tests`（base Python 3.8.18，~59s）。多局视频全量 = `python run_pipeline.py <mp4> <bvid> --prescan --parallel`（`run_video_parallel`；单局/锚点不可信自动回退旧 `run_video_prescan`）。新视频下载用 dbd env `python -m yt_dlp -f 30080 --write-info-json -c -o "picture/raw_videos/%(id)s.%(ext)s" <url>`（bilibili 需 `--add-header "Referer:https://www.bilibili.com/"` + Chrome UA 防 HTTP 412）。
+1. **运行环境命令**：全量 UT = `python -m unittest discover -s tests`（base Python 3.8.18，现 96 tests ~55s）。多局视频全量 = `python run_pipeline.py <mp4> <bvid> --prescan --parallel`（`run_video_parallel`；单局/锚点不可信自动回退旧 `run_video_prescan`）。用户确认单局时 = `python run_pipeline.py <mp4> <bvid> --single-match --anchor X Y SCALE --end-at SECONDS`。新视频下载用 dbd env `python -m yt_dlp -f 30080 --write-info-json -c -o "picture/raw_videos/%(id)s.%(ext)s" <url>`（bilibili 需 `--add-header "Referer:https://www.bilibili.com/"` + Chrome UA 防 HTTP 412）。
 2. **BV1QUt766Etg 是剪辑向视频**：用户确认真实为两局；当前已按预扫边界 630s 合并为两条记录，仍建议只作检测质量验证，不直接作为训练样本（与 BV1aat 结论一致，训练样本仍应以完整单局视频为准）。
 3. **`run_video_parallel` 的帧不落盘**：worker 把帧写进临时 scratch 后删除（只保留 CSV 入 report + dataset）。如需可视核对帧需另行抽取或改代码（frames_root 参数目前只影响单局回退路径）。
 4. **确认式 WAIT 语义变化**：给 `anchor_prior` 后不再立即开局，须先验附近连续出现 HUD 图标（`wait_min_frames` 帧）才 CALIBRATE——这修掉了"转场帧建基线→整局 unknown"的 bug，但也意味着**开局前无 HUD 的帧不会产生行**（属预期）。
@@ -367,7 +367,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - 预扫结果：`anchor_ratio=0.453 < 0.5`、`anchor_ok=false`、边界 `590s`；按设计自动回退旧版 `run_video`，本次**没有实际走 match 级并行**。
 - 首次自动跑耗时约 **95s**，错误地产出 4 个 CSV；该结果已按用户真值废弃，不能作为正式分局结论：
 - 该次自动分段的 match1~4 详情已废弃，不作为当前数据真值；真实单局结果记录在 §3.19。
-- **注意**：CLI 输出 `matches=0` 与实际 CSV/dataset 记录不一致，这是 `run_video` 的 `closed_q` 被 encoder 消费后再统计导致的统计口径 bug；不影响产物，但应后续修正。
+- 已修：`run_video` 不再从已被 encoder 消费的 `closed_q` 或 dataset 总行数统计；现在返回本次实际 `closed/matches/records`。
 - **注意**：BV1pht 的 prescan anchor 不足 0.5，导致本次未享受 parallel 路径；若要验证并行性能或清理短段，应先审阅 `prescan.json`/match1，再决定是否降低 anchor 阈值或增加人工 anchor 入口。
 
 ### 3.19 BV1pht 真值纠正（2026-09-08）
@@ -375,7 +375,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - 用户确认：`BV1pht96fEjN` 实际是**单局**，于 `14:10.5 = 850.5s` 结束；此前按 prescan/旧换局规则得到的 4 段不是 4 局，判断错误。
 - 已用固定真值隔离重跑：anchor=`(141,804) scale=1.6`、`detect_match_end=False`、窗口 `[0,850.5s)`；产出单 CSV **1690 帧**，时间 `5.5–850.0s`，gens 主走势 `5→4→3→2→0`，p2/p3 大量 `executed` 命中。
 - 已替换正式产物：删除旧 `report/.../match_2~4`，保留单一 `report/.../match_1/detect_report.csv`；`dataset/videos.jsonl` 中 BV1pht 旧 4 行替换为单行 `match=1`、1690 features、label=-1。
-- **注意**：这次修正使用了用户确认的真值边界与固定锚点，不代表当前 prescan 自动边界算法已经能独立识别该单局；后续应增加"用户确认单局/人工边界"入口，避免 anchor_ratio 偏低时错误切局。
+- **注意**：这次修正使用了用户确认的真值边界与固定锚点，不代表当前 prescan 自动边界算法已经能独立识别该单局；现已增加 `--single-match --anchor X Y SCALE --end-at SECONDS` 人工入口，避免 anchor_ratio 偏低时错误切局。
 
 ### 3.20 BV1QUt 流程耗时 profile 与提速（2026-09-08）
 
@@ -444,13 +444,13 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 **main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 验证驱动修复与并行产线(§3.16) + BV1pht 真值纠正(§3.19) 均已推送（见 §分支与提交状态）。dataset 现 6 行（BV1Uu/BV16/BV1aat + BV1QUt×2 + BV1pht 单局，新增记录 label=-1）。
 
 **已完成（本会话）**：
-- ✅ 全量 UT 提速 583s→~56s（§3.15，现 94 tests，约 53–64s，随机器负载波动）。
+- ✅ 全量 UT 提速 583s→~56s（§3.15，现 96 tests，约 53–64s，随机器负载波动）。
 - ✅ BV1aat 单局 dataset 合并（4 行→1 行，796 帧，label=-1；§3.14/§3.15）。
 - ✅ BV1QUt766Etg 验证：预扫崩溃修复（越界空 crop）、锚点全候选共识（anchor_ok 0.40→0.71）、头像骤变切局（边界 950→630）、确认式 WAIT + `_anchor_plausible`（第二局基线 bug 修复）、`run_video_parallel` 按局多进程 + min 帧过滤（全流程 ~4min）；按用户真值重新跑后保留两局记录（§3.16）。
 
 **下一步（按优先级）**：
 1. ✅ 状态补充：executed≈dead（Mori 处决画面/结算）；报告识别 `executed`，dataset 编码归一 `dead`，保持 30 维。
-2. ✅ BV1pht96fEjN 全片端到端已完成并按用户真值纠正为单局（§3.18/§3.19，固定 anchor 隔离重跑约241s，1690 帧、5.5–850.0s、1 条 label=-1 记录）；后续修正 `matches=0` 统计口径并增加人工单局边界入口。
+2. ✅ BV1pht96fEjN 全片端到端已完成并按用户真值纠正为单局（§3.18/§3.19，固定 anchor 隔离重跑约241s，1690 帧、5.5–850.0s、1 条 label=-1 记录）；`matches=0` 统计与人工单局入口均已修复。
 3. ⏳ 局内多分片并行（warm-up 状态交接）：单局视频也压到 ~1min 的可选项（§3.16 后续；工程方案见会话记录）。
 4. 后续规划（定稿未实现）：对局序列数据管道（`dataset_encoder.py`→`match_dataset.py`→`match_model.py`→`train_sequence.py`→`predict_live.py`）、`gate_ui` 大门状态、结算自动标注、数据积累上千局、模型调参+胜率走势图（原 §6 编号 9–13，内容不变）。
 

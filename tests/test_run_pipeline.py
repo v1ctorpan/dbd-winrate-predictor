@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import run_pipeline as rp
 
@@ -27,6 +28,60 @@ class TestPipeline(unittest.TestCase):
             self.assertEqual(lines[0]["title"], "测试标题")
             self.assertEqual(lines[0]["url"], "https://www.bilibili.com/video/BV1Uu8z6eEVM")
             self.assertEqual(len(lines[0]["features"][0]), 30)
+
+    def test_video_stats_report_closed_matches_not_dataset_total(self):
+        class FakeDet:
+            def __init__(self, *args, **kwargs):
+                self.calls = 0
+
+            def feed(self, frame, fname):
+                self.calls += 1
+                return {"match_end": 1} if self.calls == 1 else None
+
+            def finish(self):
+                return [2]
+
+        frames = [(None, "frame_00_00.0.jpg"), (None, "frame_00_00.5.jpg")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(rp, "_iter_video_frames", return_value=iter(frames)), \
+                mock.patch.object(rp.sd, "StreamingDetector", FakeDet), \
+                mock.patch.object(rp, "_encode_match", return_value=1):
+            videos = os.path.join(d, "videos.jsonl")
+            open(videos, "w").close()
+            stats = rp.run_video("dummy.mp4", "BV1X", videos=videos,
+                                 report_root=d, frames_root=d)
+        self.assertEqual(stats["matches"], 2)
+        self.assertEqual(stats["records"], 2)
+        self.assertEqual(stats["closed"], [1, 2])
+
+    def test_manual_single_match_uses_fixed_anchor_and_end_time(self):
+        class FakeDet:
+            instance = None
+
+            def __init__(self, *args, **kwargs):
+                self.anchor_prior = kwargs["anchor_prior"]
+                self.detect_match_end = kwargs["detect_match_end"]
+                FakeDet.instance = self
+
+            def feed(self, frame, fname):
+                return None
+
+            def finish(self):
+                return [1]
+
+        anchor = {"x": 141, "y": 804, "scale": 1.6}
+        frames = [(None, "frame_00_00.0.jpg"), (None, "frame_00_00.5.jpg")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(rp, "_iter_window_frames", return_value=iter(frames)) as it, \
+                mock.patch.object(rp.sd, "StreamingDetector", FakeDet), \
+                mock.patch.object(rp, "_encode_match", return_value=1):
+            stats = rp.run_video_manual("dummy.mp4", "BV1X", anchor, 850.5,
+                                        videos=os.path.join(d, "videos.jsonl"),
+                                        report_root=d, frames_root=d)
+        it.assert_called_once_with("dummy.mp4", 0.0, 850.5, 0.5)
+        self.assertEqual(FakeDet.instance.anchor_prior, anchor)
+        self.assertFalse(FakeDet.instance.detect_match_end)
+        self.assertEqual(stats, {"matches": 1, "records": 1, "closed": [1]})
 
 
 if __name__ == "__main__":
