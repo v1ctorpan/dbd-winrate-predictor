@@ -23,15 +23,16 @@ def one_hot_state(state):
     return v
 
 
-def compact_frame(row):
+def compact_frame(row, t0=0):
     """把一行检测结果压成 10 个整数：
     [p1..p4 状态类别索引, hooks×4, gens(-1..5), 半秒时间]。
-    占用远小于 30 维浮点 one-hot；unknown->healthy(0)、executed->dead(4)。"""
+    占用远小于 30 维浮点 one-hot；unknown->healthy(0)、executed->dead(4)。
+    t0 = 该局首帧的半秒时间，用于把时间归零（默认 0 = 绝对时间）。"""
     states = [STATE_TO_IDX.get(row[p], 0) for p in ("p1", "p2", "p3", "p4")]
     hooks = [int(h) for h in row["hooks"].split("/")]
     gens = row["gens"].strip()
     gens = -1 if gens in ("None", "") else int(gens)
-    return states + hooks + [gens, parse_time(row["frame"])]
+    return states + hooks + [gens, parse_time(row["frame"]) - t0]
 
 
 def feature_vector(row):
@@ -69,12 +70,13 @@ def encode_csv(csv_path, video_id, label, meta=None):
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
             rows.append(r)
+    t0 = parse_time(rows[0]["frame"]) if rows else 0
     return {
         "id": video_id,
         "title": meta.get("title", ""),
         "url": meta.get("url", ""),
         "match": int(meta.get("match", 1)),
-        "frames": [compact_frame(r) for r in rows],
+        "frames": [compact_frame(r, t0=t0) for r in rows],
         "label": int(label),
     }
 

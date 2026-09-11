@@ -118,6 +118,19 @@ class TestEncodeVideo(unittest.TestCase):
             self.assertEqual(rec["url"], "https://www.bilibili.com/video/BV1X")
             self.assertEqual(rec["label"], -1)
 
+    def test_encode_csv_time_zero_based(self):
+        """每局时间从 0 开始（首帧 t=0）。"""
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "in.csv")
+            with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow(["frame", "scale", "p1", "p2", "p3", "p4", "hooks", "gens", "机器标注"])
+                w.writerow(["frame_02_00.0.jpg", "1.0", "healthy", "healthy", "healthy", "healthy", "0/0/0/0", "5", "正常"])
+                w.writerow(["frame_02_10.0.jpg", "1.0", "injured", "healthy", "healthy", "healthy", "0/0/0/0", "5", "正常"])
+            rec = de.encode_csv(csv_path, "BV1", label=4)
+            self.assertEqual(rec["frames"][0][9], 0)
+            self.assertEqual(rec["frames"][1][9], 20)
+
 
 class TestWriteVideosJsonl(unittest.TestCase):
     def test_write_and_read_roundtrip(self):
