@@ -1,0 +1,6 @@
+# DBD 胜率预测 — 依赖清单（Windows, Python 3.12）
+torch==2.2.2
+numpy==1.26.4
+opencv-python==4.8.0
+matplotlib==3.11.1
+Pillow==12.3.0
