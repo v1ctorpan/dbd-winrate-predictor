@@ -449,6 +449,16 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - **效果**：**785 KB → 176 KB（约 4.5x）**，仍为可读 JSONL。
 - 文档 `docs/dataset_format.md` 已同步；旧 `features` 键废弃。全量回归 **113 tests PASS**。
 
+### 3.24 本会话小结（2026-09-11）
+
+本会话完成并已推送：
+1. **对局序列数据管道（GRU 结局预测）实现**（`5ccca5a`，见 §3.5「实现进展」）：`match_dataset.py`→`match_model.py`→`train_sequence.py`→`predict_live.py`；读 `dataset/videos.jsonl` 紧凑帧元组 → 30 维特征（时间每局归零 ÷600s）；随机截断前缀训练 + stateful 逐帧推理；env `torch 2.2.2+cpu` 可用；新增 16 tests。
+2. **数据结构：每局时间从 0 起**（`14d3c01`）：`encode_csv`/`compact_frame(row,t0)` 按该局首帧归零；1 个回归测试。
+3. **5 支视频全部按 0.5s 密集重跑并重建 `videos.jsonl`**（`14d3c01`）：BV16/BV1Uu 原 10s 稀疏已补齐；重建后 7 行、每局 t=0，帧数 BV16=578、BV1aat=820、BV1pht=1707、BV1QUt=1243/1224、BV1Uu=1278/918；标签自动标注与原真值一致（`BV1aat`、`BV1Uu m1` 按约定保留 -1）。
+4. 环境/工具：opencode 全局配置同步 cost/limit，并给 `deepseek-flash` 开启 `attachment`+`modalities(input:image)` 使**读图能力**可用（配置文件 `~/.config/opencode/opencode.jsonc`，改后需重启）。
+
+当前全量 **130 tests PASS**。下一步（§6）：`gate_ui` 大门状态识别 → 数据积累（扩充训练集）→ 模型调参 + 走势图。
+
 ## 4. 测试数据与真值
 
 - 示例帧：`picture/test1/`，12 帧 1280×720（frame_0000~0011），0/10/11 无发电机图标（0=开局、10/11=修完）
