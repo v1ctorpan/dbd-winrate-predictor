@@ -131,6 +131,23 @@ class TestEncodeVideo(unittest.TestCase):
             self.assertEqual(rec["frames"][0][9], 0)
             self.assertEqual(rec["frames"][1][9], 20)
 
+    def test_encode_csv_carries_gens_over_missing(self):
+        """HUD 短暂消失(gens=None)时复用前一有效值; 局首缺失保持 -1。"""
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "in.csv")
+            with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow(["frame", "scale", "p1", "p2", "p3", "p4", "hooks", "gens", "机器标注"])
+                w.writerow(["frame_00_00.0.jpg", "1.0", "healthy", "healthy", "healthy", "healthy", "0/0/0/0", "None", "gens未识别"])
+                w.writerow(["frame_00_10.0.jpg", "1.0", "healthy", "healthy", "healthy", "healthy", "0/0/0/0", "5", "正常"])
+                w.writerow(["frame_00_20.0.jpg", "1.0", "injured", "healthy", "healthy", "healthy", "0/0/0/0", "None", "gens未识别"])
+                w.writerow(["frame_00_30.0.jpg", "1.0", "injured", "healthy", "healthy", "healthy", "0/0/0/0", "4", "正常"])
+            rec = de.encode_csv(csv_path, "BV1", label=4)
+            self.assertEqual(rec["frames"][0][8], -1)   # 局首缺失保持 -1
+            self.assertEqual(rec["frames"][1][8], 5)
+            self.assertEqual(rec["frames"][2][8], 5)    # 沿用前值
+            self.assertEqual(rec["frames"][3][8], 4)
+
 
 class TestWriteVideosJsonl(unittest.TestCase):
     def test_write_and_read_roundtrip(self):

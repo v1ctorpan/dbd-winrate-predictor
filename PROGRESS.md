@@ -1,7 +1,7 @@
 # DBD 胜率预测项目 — 进展与设计文档
 
 > 最后更新：2026-09-11
-> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；**全量 UT 提速 ~10x（583s→~57s，§3.15，现 113 tests）**；多线程产线 Task1-4、Task5 修复、BV1QUt 验证驱动修复 + match 级并行（§3.16）、BV1pht 真值纠正（§3.18/§3.19）、**自动锚点/切局可靠性修复（§3.21）**、**结局自动标注 `labeling.py` + 高亮逃出识别（§3.22）**、**`videos.jsonl` 紧凑帧元组存储（§3.23）** 均已推送。dataset 现 7 行（BV1Uu 2 局、BV16=3、BV1pht=1、BV1QUt=0/0 已自动标注；BV1aat=-1、BV1Uu m1=-1 不入训练）——**均已 0.5s 密集重跑、每局 t 从 0**（2026-09-11 重建，见 §3.5）。剩余：gate_ui、数据积累等（见 §6、§3.17~§3.23 注意点）；**对局序列管道已实现并推送（§3.5，130 tests PASS）**。
+> 状态：HUD 区域校准完成；头像状态识别、hook 计数、发电机剩余数识别均对测试数据 100% 正确；发电机数字识别为**通用模板库 + 时序状态机（GensTracker）**；**全量 UT 提速 ~10x（583s→~57s，§3.15，现 113 tests）**；多线程产线 Task1-4、Task5 修复、BV1QUt 验证驱动修复 + match 级并行（§3.16）、BV1pht 真值纠正（§3.18/§3.19）、**自动锚点/切局可靠性修复（§3.21）**、**结局自动标注 `labeling.py` + 高亮逃出识别（§3.22）**、**`videos.jsonl` 紧凑帧元组存储（§3.23）** 均已推送。dataset 现 7 行（BV1Uu 2 局、BV16=3、BV1pht=1、BV1QUt=0/0 已自动标注；BV1aat=-1、BV1Uu m1=-1 不入训练）——**均已 0.5s 密集重跑、每局 t 从 0**（2026-09-11 重建，见 §3.5）。剩余：gate_ui、数据积累等（见 §6、§3.17~§3.23 注意点）；**对局序列管道已实现并推送（§3.5，132 tests PASS）**。
 
 ## 分支与提交状态（2026-09-08）
 
@@ -176,7 +176,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - **与计划的偏差（重要）**：存储已改为 `dataset/videos.jsonl` 紧凑帧元组（不再是 per-match 30 维 JSONL）。因此跳过计划的 Task1（编码器已有 `dataset_encoder.frames_to_features`）；`match_dataset.py` 改为**直接读 `videos.jsonl`**、过滤 `label<0`、用 `frames_to_features` 还原 30 维，并把**时间每局归零后 /1200（半秒单位，即 /600s）**归一。
 - 新增文件：`match_dataset.py`（MatchDataset/trucated_item/collate_fn）、`match_model.py`（MatchGRU：变长 pack_padded + 单步 `single_step`）、`train_sequence.py`（按局切分 + 随机截断前缀训练 + ckpt；已修「val_acc=0 时不保存 ckpt」缺陷）、`predict_live.py`（stateful 逐帧推理，时间归一与训练一致）。`requirements.txt` 记录依赖。
 - 环境：dbd env 现为 **Python 3.12.14 + torch 2.2.2+cpu（可 import，无 CUDA）**；计划里的「dylib 缺失修复」已过时。
-- 全量 **130 tests PASS**（原 113 + 新增 16）。
+- 全量 **132 tests PASS**（原 113 + 新增 16）。
 - **注意**：`videos.jsonl` 可用（label≥0）仅 **5 局**且类别偏斜（0×2/1/2/3），训练仅为**流程 smoke test**（val_acc 恒 0，ckpt 由 best 初值 -1 保证保存）；真正精度需等数据积累到上百~上千局。
 - **每局时间归一为从 0 起**：`encode_csv` 以该局首帧为 t0，`compact_frame(row, t0)` 输出 `t-t0`；已一次性迁移现有 `videos.jsonl`（各记录首帧 t=0）。`match_dataset`/`predict_live` 的时间分量仍按「每局归零 ÷600s」归一，二者一致。
 - **数据集 0.5s 重建（2026-09-11）**：5 支视频全部按 **0.5s** 重跑（BV16/BV1Uu 原为 10s 稀疏已补齐；BV1/BV1aat/BV1QUt 原已 0.5s）。命令：`run_pipeline.py <mp4> <bvid>` + `--single-match`(BV16/BV1aat/BV1pht) / `--prescan --parallel`(BV1QUt/BV1Uu)。重建后 7 行、每局 t 从 0；帧数：BV16=578、BV1aat=820、BV1pht=1707、BV1QUt=1243/1224、BV1Uu=1278/918。自动标签与原真值一致（3/-1/1/0/0/-1/2；`BV1aat`、`BV1Uu m1` 按既有约定恢复 -1）。源视频 `BV16/BV1aat/BV1QUt/BV1Uu` 已重新下载到 `picture/raw_videos/`（gitignore）。
@@ -457,7 +457,27 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 3. **5 支视频全部按 0.5s 密集重跑并重建 `videos.jsonl`**（`14d3c01`）：BV16/BV1Uu 原 10s 稀疏已补齐；重建后 7 行、每局 t=0，帧数 BV16=578、BV1aat=820、BV1pht=1707、BV1QUt=1243/1224、BV1Uu=1278/918；标签自动标注与原真值一致（`BV1aat`、`BV1Uu m1` 按约定保留 -1）。
 4. 环境/工具：opencode 全局配置同步 cost/limit，并给 `deepseek-flash` 开启 `attachment`+`modalities(input:image)` 使**读图能力**可用（配置文件 `~/.config/opencode/opencode.jsonc`，改后需重启）。
 
-当前全量 **130 tests PASS**。下一步（§6）：`gate_ui` 大门状态识别 → 数据积累（扩充训练集）→ 模型调参 + 走势图。
+当前全量 **132 tests PASS**。下一步（§6）：`gate_ui` 大门状态识别 → 数据积累（扩充训练集）→ 模型调参 + 走势图。
+
+### 3.25 gens 数字识别抗锚点抖动修复 + `videos.jsonl` gens 清零（2026-09-11）
+
+**问题**：`videos.jsonl` 中部分帧（尤其对局开头）gens=-1（编码层 None）。用户问"是没识别到发电机数量吗"。
+
+**根因（已实证）**：不是 HUD 缺失，而是**锚点逐帧抖动 ±2px** 使固定窗口的数字条带 NCC 崩溃。
+同一帧 `frame_00_04.0`：锚点 `(143,806)`→数字 5 得分 **0.94**；锚点 `(141,804)`→**0.43**（<LOW_THR，判 None）。
+detect_anchor 每帧给出略抖动的锚点（x 在 141↔143 跳），数字条带对 2px 平移极敏感 → 开局无 prev 可沿用即 None；一旦某帧识别成功后被"帧间沿用"锁住又恢复。
+
+**修复（TDD）**：
+- `gens_counter._best_digit_match`：数字识别改为**平移容忍**——搜索窗锚定在"数字所在左侧窗口"外扩 `pad≈2*scale`，用 `cv2.matchTemplate` 找与各数字模板对齐的最佳 NCC（不再固定窗口直接算）。`count_gens` 与 `GensTracker` 共用。
+- matchTemplate 会整体抬高分数，故去掉 `GensTracker` 里旧的 `LOW_THR`(0.45) 低分兜底（过渡帧错分 0.491 会被误收并锁死）；< digit_thr 一律沿用前值/None。
+- 新增回归：`test_jittered_anchor_diagonal_shift_still_reads`（BV16 帧用 `(141,804)` 必须判 5）、`test_transient_icon_dip_does_not_lock_zero` 保持通过。
+- 全真值集（test1/BV1/BV16 共 42 个非 0 帧）复测：正确 42/42、0 误判，正确最低分 0.556。
+
+**数据重跑**：5 支视频按 0.5s 重新检测。`gens=None` 大幅下降：BV16 286→49、BV1pht 128→23、BV1aat 72→19、BV1QUt 24/52→2/3、BV1Uu 3/6。**开局 None 全部消除**；残余短块（3~8 帧，含结算尾帧）为真·HUD 消失。
+
+**编码层**：`encode_csv` 增加"gens 缺失沿用前一有效值"（**局首缺失仍 -1**，本次无局首缺失）。对已重建数据补了 105 帧 → `videos.jsonl` **gens=-1 全部清零**。新增回归 `test_encode_csv_carries_gens_over_missing`。
+
+全量 **132 tests PASS**。帧数：BV16=578、BV1aat=820、BV1pht=1707、BV1QUt=1243/1224、BV1Uu=1278/918；标签 3/-1/1/0/0/-1/2（BV1aat、BV1Uu m1 仍按约定 -1）。
 
 ## 4. 测试数据与真值
 
@@ -511,7 +531,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 
 ## 6. 待办（下一步）
 
-**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 修复与并行产线(§3.16) + BV1pht 真值纠正(§3.19) + 自动锚点/切局(§3.21) + 结局自动标注(§3.22) + 存储优化(§3.23) 均已推送；另 5 支视频已 **0.5s 密集重建**（§3.5，本会话，待提交）。dataset 现 7 行（BV1Uu 2 局、BV16=3、BV1pht=1、BV1QUt=0/0；BV1aat=-1、BV1Uu m1=-1）。原 113 tests ~57s PASS；现 **130 tests PASS**（§3.5）。
+**main（当前分支）**：Task1-4 + Task5 修复 + UT 提速(§3.15) + BV1QUt 修复与并行产线(§3.16) + BV1pht 真值纠正(§3.19) + 自动锚点/切局(§3.21) + 结局自动标注(§3.22) + 存储优化(§3.23) 均已推送；另 5 支视频已 **0.5s 密集重建**（§3.5，本会话，待提交）。dataset 现 7 行（BV1Uu 2 局、BV16=3、BV1pht=1、BV1QUt=0/0；BV1aat=-1、BV1Uu m1=-1）。原 113 tests ~57s PASS；现 **132 tests PASS**（§3.5）。
 
 **已完成（本会话）**：
 - ✅ 全量 UT 提速 583s→~57s（§3.15）。
@@ -524,7 +544,7 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 - ✅ `videos.jsonl` 紧凑帧元组存储（785KB→176KB，§3.23）。
 
 **下一步（按优先级）**：
-1. ✅ 对局序列数据管道：`match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py` 已实现（见 §3.5「实现进展」；环境 torch 2.2.2+cpu 可用；全量 130 tests PASS）。**当前仅流程 smoke test**。
+1. ✅ 对局序列数据管道：`match_dataset.py` → `match_model.py` → `train_sequence.py` → `predict_live.py` 已实现（见 §3.5「实现进展」；环境 torch 2.2.2+cpu 可用；全量 132 tests PASS）。**当前仅流程 smoke test**。
 2. ⏳ `gate_ui` 大门状态识别 + 真实帧回归。
 3. ⏳ BV1Uu 源视频 0.5s 重抽并重标（当前无 mp4；10s 稀疏帧无法自动标注 match_2）。
 4. 数据积累：更多完整单局视频 → 自动检测 + 自动标注，扩充训练集（上千局）→ 之后才有意义的模型训练/评估（按局切分 + 混淆矩阵/MAE）。
@@ -534,6 +554,6 @@ HUD 大小会随玩家分辨率/缩放变化，因此采用"锚点"确定缩放�
 ## 7. 环境说明
 
 - Windows；dbd conda env：**Python 3.12.14**、torch 2.2.2+cpu、numpy 1.26.4、cv2 4.8.0、matplotlib 3.11.1、Pillow 12.3.0（见 `requirements.txt`）
-- 全量测试：`& "C:\Users\Sallia\.conda\envs\dbd\python.exe" -m unittest discover -s tests`（现 130 tests）
+- 全量测试：`& "C:\Users\Sallia\.conda\envs\dbd\python.exe" -m unittest discover -s tests`（现 132 tests）
 - 训练：`python train_sequence.py --videos dataset/videos.jsonl --out models/match_gru.pt --epochs 30`
 - 推理：`python predict_live.py models/match_gru.pt <detect_report.csv>`

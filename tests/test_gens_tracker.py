@@ -177,6 +177,16 @@ class TestGensTracker(unittest.TestCase):
         second = tracker.update(small, resolved_small, a2)
         self.assertEqual(second, 4)
 
+    def test_jittered_anchor_diagonal_shift_still_reads(self):
+        """锚点 ±2px 对角抖动会让数字条带 NCC 崩到 <LOW_THR 而误判 None
+        （BV16 实测 anchor(141,804) -> None）。识别应对小幅平移鲁棒。"""
+        anchor = {"x": 141, "y": 804, "scale": 1.5}
+        frame = cv2.imread(os.path.join(BV16, "frame_00_10.0.jpg"))
+        self.assertIsNotNone(frame)
+        resolved = hud_regions.resolve_regions(hud_regions.load_regions(CFG), anchor)
+        tracker = gens_counter.GensTracker(self.refs, gen=self.gen)
+        self.assertEqual(tracker.update(frame, resolved, anchor), 5)
+
     def test_reset_clears_state(self):
         ga = {"x": 121, "y": 847, "w": 45, "h": 41, "scale": 1.3}
         tracker = gens_counter.GensTracker(self.refs, gen=self.gen)

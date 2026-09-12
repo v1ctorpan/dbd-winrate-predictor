@@ -106,6 +106,45 @@ def _valid_crop(frame, b):
     crop = frame[y0:y1, x0:x1]
     return crop if crop.size > 0 else None
 
+
+def _gray(img):
+    return img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+
+def _best_digit_match(frame, b, refs, scale, pad=None):
+    """数字识别（平移容忍）：在 gens_row 区域外扩 pad 像素的搜索窗内用
+    matchTemplate 找与各数字模板对齐的最佳位置，取最高 NCC。
+
+    动机：HUD 锚点逐帧抖动 ±2px 会让固定窗口的数字条带 NCC 从 ~0.9 崩到
+    <0.45（BV16 实测），从而误判 None。允许小幅平移即可恢复。"""
+    fh, fw = frame.shape[:2]
+    if pad is None:
+        pad = max(1, int(round(2 * scale)))
+    dw = int(DIGIT_X * scale)
+    dh = b["y1"] - b["y0"]
+    # 搜索窗锚定在"数字所在左侧窗口"外扩 pad，避免 matchTemplate 滑到右侧发电机图标
+    sx0 = max(0, b["x0"] - pad)
+    sx1 = min(fw, b["x0"] + dw + pad)
+    sy0 = max(0, b["y0"] - pad)
+    sy1 = min(fh, b["y1"] + pad)
+    if sx1 - sx0 < 1 or sy1 - sy0 < 1:
+        return None, -1.0
+    search = _gray(frame[sy0:sy1, sx0:sx1])
+    best, best_score = None, -1.0
+    for digit, imgs in refs.items():
+        for ref in imgs:
+            tpl = ref if ref.shape[:2] == (dh, dw) else cv2.resize(
+                ref, (dw, dh), interpolation=cv2.INTER_AREA)
+            tpl = _gray(tpl)
+            if tpl.shape[0] > search.shape[0] or tpl.shape[1] > search.shape[1]:
+                continue
+            res = cv2.matchTemplate(search, tpl, cv2.TM_CCOEFF_NORMED)
+            _, mx, _, _ = cv2.minMaxLoc(res)
+            if mx > best_score:
+                best_score, best = float(mx), digit
+    return best, best_score
+
+
 def count_gens(frame, resolved, refs, gen=None, anchor=None, gen_icon_thr=GEN_ICON_THR, digit_thr=DIGIT_THR):
     b = resolved["gens_row"]
     crop = _valid_crop(frame, b)
@@ -122,21 +161,7 @@ def count_gens(frame, resolved, refs, gen=None, anchor=None, gen_icon_thr=GEN_IC
         anchor = {"scale": 1.0}
 
     if _match_gen_icon(crop, gen, anchor) >= gen_icon_thr:
-        digit_w = int(DIGIT_X * anchor["scale"])
-        digit_crop = crop[:, 0:digit_w]
-        dh, dw = digit_crop.shape[:2]
-
-        def fit(img):
-            if img.shape[:2] != (dh, dw):
-                return cv2.resize(img, (dw, dh), interpolation=cv2.INTER_AREA)
-            return img
-
-        best, best_score = None, -1.0
-        for digit, imgs in refs.items():
-            for ref in imgs:
-                s = _ncc(digit_crop, fit(ref))
-                if s > best_score:
-                    best_score, best = s, digit
+        best, best_score = _best_digit_match(frame, b, refs, anchor["scale"])
         if best is not None and best_score >= digit_thr:
             return best
         return None
@@ -213,16 +238,8 @@ class GensTracker:
                 self.prev_crop = digit_crop
                 return self.prev_digit
 
-        # 2) 模板重识别
-        best, best_score = None, -1.0
-        for digit, imgs in self.refs.items():
-            for ref in imgs:
-                r = ref
-                if r.shape[:2] != (dh, dw):
-                    r = cv2.resize(r, (dw, dh), interpolation=cv2.INTER_AREA)
-                s = _ncc(digit_crop, r)
-                if s > best_score:
-                    best_score, best = s, digit
+        # 2) 模板重识别（平移容忍：在区域外扩窗内找最佳对齐，抗锚点抖动）
+        best, best_score = _best_digit_match(frame, b, self.refs, anchor["scale"])
 
         if best is not None and best_score >= self.digit_thr:
             # 3) 递减约束：gens 只减不增。仅当 prev 是真实数字(1-5)时，
@@ -236,13 +253,9 @@ class GensTracker:
             self.prev_crop = digit_crop
             return best
 
-        # 4) 模板分数不足：best 仍明确(>=LOW_THR)且符合递减则采纳；
-        #    否则若前一帧有效则沿用（防御渲染噪声）
-        if (best is not None and best_score >= self.low_thr
-                and (self.prev_digit not in (1, 2, 3, 4, 5) or best <= self.prev_digit)):
-            self.prev_digit = best
-            self.prev_crop = digit_crop
-            return best
+        # 4) 分数不足（< digit_thr）：若前一帧有效数字(1-5)则沿用，否则 None。
+        #    （matchTemplate 对齐后分数尺度已抬高，旧的 LOW_THR 低分兜底会误收
+        #     过渡帧的错分，故这里不再单独采纳低分结果。）
         if self.prev_digit is not None and self.prev_digit in (1, 2, 3, 4, 5):
             self.prev_crop = digit_crop
             return self.prev_digit

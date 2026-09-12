@@ -71,12 +71,25 @@ def encode_csv(csv_path, video_id, label, meta=None):
         for r in csv.DictReader(f):
             rows.append(r)
     t0 = parse_time(rows[0]["frame"]) if rows else 0
+    # HUD 短暂消失(gens=None)时复用前一有效值；局首缺失保持 -1（未知）。
+    frames = []
+    carry = None
+    for r in rows:
+        raw = r["gens"].strip()
+        g = None if raw in ("None", "") else int(raw)
+        if g is None:
+            g = carry
+        else:
+            carry = g
+        r2 = dict(r)
+        r2["gens"] = "" if g is None else str(g)
+        frames.append(compact_frame(r2, t0=t0))
     return {
         "id": video_id,
         "title": meta.get("title", ""),
         "url": meta.get("url", ""),
         "match": int(meta.get("match", 1)),
-        "frames": [compact_frame(r, t0=t0) for r in rows],
+        "frames": frames,
         "label": int(label),
     }
 
